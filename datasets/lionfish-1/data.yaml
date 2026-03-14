@@ -1,10 +1,9 @@
-train: ../train/images
-val: ../valid/images
-test: ../test/images
-
+train: test/images
+val: test/images
+test: test/images
 nc: 1
-names: ['Lionfish']
-
+names:
+- Lionfish
 roboflow:
   workspace: hunter-gunter
   project: lionfish-sserd
