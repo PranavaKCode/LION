@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lionfish-yolov8"
+version = "0.1.0"
+description = "Modern YOLOv8 training, validation, and prediction workflow for the Lionfish project."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "ultralytics>=8.3.0,<9",
+  "roboflow>=1.1.0,<2",
+  "pyyaml>=6.0,<7",
+]
+
+[project.scripts]
+lionfish-yolo = "lionfish_yolo:main"
+
+[tool.setuptools]
+py-modules = ["lionfish_yolo"]
