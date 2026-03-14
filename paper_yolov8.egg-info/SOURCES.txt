@@ -1,0 +1,9 @@
+README.md
+lionfish_yolo.py
+pyproject.toml
+paper_yolov8.egg-info/PKG-INFO
+paper_yolov8.egg-info/SOURCES.txt
+paper_yolov8.egg-info/dependency_links.txt
+paper_yolov8.egg-info/entry_points.txt
+paper_yolov8.egg-info/requires.txt
+paper_yolov8.egg-info/top_level.txt

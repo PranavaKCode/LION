@@ -1,0 +1,3 @@
+[console_scripts]
+lionfish-yolo = lionfish_yolo:main
+paper-yolo = lionfish_yolo:main
