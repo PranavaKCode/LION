@@ -1,53 +1,36 @@
-﻿# Hosted Lionfish Detection
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-This repo is now focused on one workflow: running the hosted Roboflow lionfish detector on images and video.
+## Getting Started
 
-## Python
+First, run the development server:
 
-Use Python 3.11 on this machine, not the default 3.14 interpreter.
-
-```powershell
-py -3.11 -m pip install -e .
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## Roboflow API key
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-```powershell
-$env:ROBOFLOW_API_KEY = "your-api-key"
-```
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-## Show the preset
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-```powershell
-py -3.11 .\lionfish_yolo.py presets
-```
+## Learn More
 
-## Run on a video
+To learn more about Next.js, take a look at the following resources:
 
-```powershell
-py -3.11 .\lionfish_yolo.py hosted-predict --video "C:\Users\goodp\Downloads\120391-720880500_small.mp4"
-```
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-## Run on one image
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-```powershell
-py -3.11 .\lionfish_yolo.py hosted-predict --source "C:\path\to\lionfish.jpg"
-```
+## Deploy on Vercel
 
-## Run on an image folder
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-```powershell
-py -3.11 .\lionfish_yolo.py hosted-predict --source "C:\path\to\images"
-```
-
-## Override the model manually
-
-```powershell
-py -3.11 .\lionfish_yolo.py hosted-predict --rf-model-id "workspace/project/version" --video "C:\path\to\clip.mp4"
-```
-
-## Outputs
-
-By default the script writes to `runs\lionfish\hosted-predict` and updates `runs\lionfish\last_run.json`.
-
-Use `--no-json` if you only want rendered images or video without the sidecar JSON files.
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
