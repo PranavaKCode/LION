@@ -14,7 +14,7 @@ DEFAULT_DATASET_ROOT = Path("datasets")
 DEFAULT_EPOCHS = 75
 DEFAULT_IMAGE_SIZE = 800
 DEFAULT_CONFIDENCE = 0.25
-DEFAULT_ROBOFLOW_KEY_ENV = "rf_n2OhmPIxMOZVj8995pK5u2pkc2p1"
+DEFAULT_ROBOFLOW_KEY_ENV = "ROBOFLOW_API_KEY"
 DATASET_PRESETS: dict[str, dict[str, Any]] = {
     "lionfish": {
         "label": "Lionfish",
@@ -153,6 +153,16 @@ def resolve_api_key(args: argparse.Namespace) -> str:
     api_key = os.getenv(args.rf_api_key_env)
     if api_key:
         return api_key
+
+    fallback_api_key = os.getenv("ROBOFLOW_API_KEY")
+    if fallback_api_key:
+        return fallback_api_key
+
+    if args.rf_api_key_env.startswith("rf_"):
+        raise CliError(
+            "Expected --rf-api-key-env to be an environment variable name like `ROBOFLOW_API_KEY`, "
+            "but it looks like a Roboflow key was used there. Use --rf-api-key or set $env:ROBOFLOW_API_KEY instead."
+        )
 
     raise CliError(
         f"Roboflow API key is missing. Set {args.rf_api_key_env} or pass --rf-api-key."
