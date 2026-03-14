@@ -1,19 +1,13 @@
-# Lionfish YOLOv8 Workflow
+# Paper YOLOv8 Workflow
 
-This repo now contains a local, script-based replacement for the older Colab notebook in `Copy_of_yolov8_LF.ipynb`.
+This workspace contains a modern local replacement for the older Colab YOLOv8 notebooks in the public `kluless13/paper` repo.
 
-The original notebook depended on:
+Instead of notebook magics like `!pip`, `%cd`, and `!yolo`, [`lionfish_yolo.py`](./lionfish_yolo.py) gives you a reusable CLI for the paper's YOLOv8 experiments.
 
-- notebook shell magics like `!pip`, `%cd`, and `!yolo`
-- a pinned 2023-era `ultralytics==8.0.20`
-- manual output browsing inside `/content/runs`
+Built-in dataset presets from the paper:
 
-The replacement in `lionfish_yolo.py` keeps the same high-level flow but uses a reusable CLI:
-
-1. download the dataset from Roboflow if needed
-2. train a YOLOv8 model
-3. validate the trained weights
-4. run predictions on the dataset test split and an optional video
+- `lionfish` -> Roboflow `hunter-gunter/lionfish-sserd` version `1`
+- `cots` -> Roboflow `cots/google-images-ztm4n` version `2`
 
 ## Recommended environment
 
@@ -25,71 +19,72 @@ py -3.12 -m venv .venv
 pip install -e .
 ```
 
-## Dataset download
+## Show the built-in presets
 
-If you already have a `data.yaml`, skip this section and pass `--data` directly to the commands below.
+```powershell
+python .\lionfish_yolo.py presets
+```
 
-Set your Roboflow API key:
+## Roboflow API key
+
+The datasets in the paper came from Roboflow, so set an API key before download commands:
 
 ```powershell
 $env:ROBOFLOW_API_KEY = "your-api-key"
 ```
 
-Download the dataset:
+## Reproduce the Lionfish YOLOv8 workflow
+
+Download the paper dataset:
 
 ```powershell
-python .\lionfish_yolo.py download-dataset `
-  --rf-workspace your-workspace `
-  --rf-project your-project `
-  --rf-version 1
+python .\lionfish_yolo.py download-dataset --preset lionfish
 ```
 
-## Training
+Train:
 
 ```powershell
-python .\lionfish_yolo.py train --data .\datasets\your-project-v1\data.yaml
+python .\lionfish_yolo.py train --preset lionfish
 ```
 
-Defaults are aligned with the notebook:
-
-- `model=yolov8s.pt`
-- `epochs=75`
-- `imgsz=800`
-
-## Validation
+Or let the script download automatically if it is missing:
 
 ```powershell
-python .\lionfish_yolo.py validate --data .\datasets\your-project-v1\data.yaml
+python .\lionfish_yolo.py train --preset lionfish --download-if-missing
 ```
 
-By default this looks for weights in `runs\lionfish\train\weights\best.pt`.
-
-## Prediction
-
-Predict on the dataset test split:
+Run the whole flow from the paper in one command:
 
 ```powershell
-python .\lionfish_yolo.py predict --data .\datasets\your-project-v1\data.yaml
+python .\lionfish_yolo.py all --preset lionfish --download-if-missing
 ```
 
-Predict on a specific video:
+## Reproduce the COTS YOLOv8 workflow
 
 ```powershell
-python .\lionfish_yolo.py predict `
-  --data .\datasets\your-project-v1\data.yaml `
-  --video C:\path\to\LFclip.mp4
+python .\lionfish_yolo.py all --preset cots --download-if-missing
 ```
 
-## One-shot workflow
-
-This reproduces the whole notebook flow in one command:
+## Predict on a paper video or your own clip
 
 ```powershell
-python .\lionfish_yolo.py all `
-  --rf-workspace your-workspace `
-  --rf-project your-project `
-  --rf-version 1 `
-  --video C:\path\to\LFclip.mp4
+python .\lionfish_yolo.py predict --preset lionfish --video C:\path\to\LFclip.mp4
+python .\lionfish_yolo.py predict --preset cots --video C:\path\to\cotsclip1.mp4
 ```
 
-Each command writes a small manifest to `runs\lionfish\last_run.json` so the latest dataset path, weights path, metrics, and prediction directories are easy to find.
+## Use your own dataset instead
+
+If you are not reproducing the paper datasets, pass a local `data.yaml` directly:
+
+```powershell
+python .\lionfish_yolo.py train --data .\datasets\my-dataset\data.yaml
+```
+
+## Outputs
+
+By default the runs go to:
+
+- `runs\paper\lionfish`
+- `runs\paper\cots`
+
+Each command writes `last_run.json` in the output root so the latest dataset path, weights path, metrics, and prediction directories are easy to find.

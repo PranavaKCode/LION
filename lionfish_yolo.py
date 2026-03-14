@@ -9,12 +9,30 @@ from typing import Any
 
 
 DEFAULT_MODEL = "yolov8s.pt"
-DEFAULT_OUTPUT_ROOT = Path("runs") / "lionfish"
+DEFAULT_OUTPUT_ROOT = Path("runs") / "paper"
 DEFAULT_DATASET_ROOT = Path("datasets")
 DEFAULT_EPOCHS = 75
 DEFAULT_IMAGE_SIZE = 800
 DEFAULT_CONFIDENCE = 0.25
 DEFAULT_ROBOFLOW_KEY_ENV = "ROBOFLOW_API_KEY"
+DATASET_PRESETS: dict[str, dict[str, Any]] = {
+    "lionfish": {
+        "label": "Lionfish",
+        "rf_workspace": "hunter-gunter",
+        "rf_project": "lionfish-sserd",
+        "rf_version": 1,
+        "dataset_dir": "lionfish-1",
+        "source_repo": "kluless13/paper",
+    },
+    "cots": {
+        "label": "COTS",
+        "rf_workspace": "cots",
+        "rf_project": "google-images-ztm4n",
+        "rf_version": 2,
+        "dataset_dir": "Google-Images-2",
+        "source_repo": "kluless13/paper",
+    },
+}
 
 
 class CliError(RuntimeError):
@@ -92,6 +110,34 @@ def save_run_manifest(output_root: Path, manifest: dict[str, Any]) -> Path:
     return manifest_path
 
 
+def preset_names() -> list[str]:
+    return sorted(DATASET_PRESETS)
+
+
+def add_manifest_context(args: argparse.Namespace, manifest: dict[str, Any]) -> dict[str, Any]:
+    if getattr(args, "preset", None):
+        manifest = {"preset": args.preset, **manifest}
+    return manifest
+
+
+def apply_dataset_preset_defaults(args: argparse.Namespace) -> None:
+    preset_name = getattr(args, "preset", None)
+    if not preset_name:
+        return
+
+    preset = DATASET_PRESETS[preset_name]
+    if hasattr(args, "rf_workspace") and not getattr(args, "rf_workspace", None):
+        args.rf_workspace = preset["rf_workspace"]
+    if hasattr(args, "rf_project") and not getattr(args, "rf_project", None):
+        args.rf_project = preset["rf_project"]
+    if hasattr(args, "rf_version") and getattr(args, "rf_version", None) is None:
+        args.rf_version = preset["rf_version"]
+    if hasattr(args, "dataset_root") and not getattr(args, "dataset_root", None):
+        args.dataset_root = str(DEFAULT_DATASET_ROOT / preset["dataset_dir"])
+    if hasattr(args, "output_root") and getattr(args, "output_root", None) == str(DEFAULT_OUTPUT_ROOT):
+        args.output_root = str(DEFAULT_OUTPUT_ROOT / preset_name)
+
+
 def resolve_data_yaml_argument(path_text: str) -> Path:
     data_yaml = ensure_exists(resolve_path(path_text), "Dataset YAML")
     if data_yaml.is_dir():
@@ -118,9 +164,19 @@ def resolve_dataset_root(args: argparse.Namespace) -> Path:
         return resolve_path(args.dataset_root)
 
     if not args.rf_project or args.rf_version is None:
-        raise CliError("A dataset root could not be inferred. Pass --dataset-root.")
+        raise CliError("A dataset root could not be inferred. Pass --dataset-root or use --preset.")
 
     return resolve_path(DEFAULT_DATASET_ROOT / f"{args.rf_project}-v{args.rf_version}")
+
+
+def local_dataset_yaml(args: argparse.Namespace) -> Path | None:
+    try:
+        dataset_root = resolve_dataset_root(args)
+    except CliError:
+        return None
+
+    candidate = dataset_root / "data.yaml"
+    return candidate.resolve() if candidate.exists() else None
 
 
 def download_dataset(args: argparse.Namespace) -> Path:
@@ -134,7 +190,9 @@ def download_dataset(args: argparse.Namespace) -> Path:
         if value in (None, "")
     ]
     if missing:
-        raise CliError("Downloading from Roboflow needs " + ", ".join(missing) + ".")
+        raise CliError(
+            "Downloading from Roboflow needs " + ", ".join(missing) + ". You can also use --preset."
+        )
 
     Roboflow = require_roboflow()
     api_key = resolve_api_key(args)
@@ -153,9 +211,24 @@ def download_dataset(args: argparse.Namespace) -> Path:
 def resolve_data_yaml(args: argparse.Namespace, allow_download: bool) -> Path:
     if args.data:
         return resolve_data_yaml_argument(args.data)
-    if allow_download:
+
+    inferred_yaml = local_dataset_yaml(args)
+    if inferred_yaml:
+        return inferred_yaml
+
+    if allow_download or getattr(args, "download_if_missing", False):
         return download_dataset(args)
-    raise CliError("Pass --data or use the `download-dataset`/`all` command with Roboflow settings.")
+
+    if getattr(args, "preset", None):
+        dataset_root = resolve_dataset_root(args)
+        raise CliError(
+            f"The `{args.preset}` dataset is not present at {dataset_root}. "
+            "Run `download-dataset --preset ...` first or add --download-if-missing."
+        )
+
+    raise CliError(
+        "Pass --data, use --preset, or use the `download-dataset`/`all` command with Roboflow settings."
+    )
 
 
 def load_dataset_config(data_yaml: Path) -> dict[str, Any]:
@@ -277,15 +350,29 @@ def default_weights_path(output_root: Path, run_name: str) -> Path:
     return output_root / run_name / "weights" / "best.pt"
 
 
+def handle_presets(args: argparse.Namespace) -> int:
+    for name in preset_names():
+        preset = DATASET_PRESETS[name]
+        print(
+            f"{name}: {preset['label']} | "
+            f"{preset['rf_workspace']}/{preset['rf_project']} v{preset['rf_version']} | "
+            f"local folder: {DEFAULT_DATASET_ROOT / preset['dataset_dir']}"
+        )
+    return 0
+
+
 def handle_download_dataset(args: argparse.Namespace) -> int:
     output_root = resolve_path(args.output_root)
     data_yaml = download_dataset(args)
     manifest_path = save_run_manifest(
         output_root,
-        {
-            "command": args.command,
-            "data_yaml": str(data_yaml),
-        },
+        add_manifest_context(
+            args,
+            {
+                "command": args.command,
+                "data_yaml": str(data_yaml),
+            },
+        ),
     )
     print(f"Dataset ready: {data_yaml}")
     print(f"Manifest saved to: {manifest_path}")
@@ -308,11 +395,14 @@ def handle_train(args: argparse.Namespace) -> int:
     )
     manifest_path = save_run_manifest(
         output_root,
-        {
-            "command": args.command,
-            "data_yaml": str(data_yaml),
-            "weights_path": str(weights_path),
-        },
+        add_manifest_context(
+            args,
+            {
+                "command": args.command,
+                "data_yaml": str(data_yaml),
+                "weights_path": str(weights_path),
+            },
+        ),
     )
     print(f"Training complete. Best weights: {weights_path}")
     print(f"Manifest saved to: {manifest_path}")
@@ -337,12 +427,15 @@ def handle_validate(args: argparse.Namespace) -> int:
     )
     manifest_path = save_run_manifest(
         output_root,
-        {
-            "command": args.command,
-            "data_yaml": str(data_yaml),
-            "weights_path": str(weights_path),
-            "validation_metrics": metrics,
-        },
+        add_manifest_context(
+            args,
+            {
+                "command": args.command,
+                "data_yaml": str(data_yaml),
+                "weights_path": str(weights_path),
+                "validation_metrics": metrics,
+            },
+        ),
     )
     print(f"Validation complete for: {weights_path}")
     print(json.dumps(metrics, indent=2))
@@ -392,12 +485,15 @@ def handle_predict(args: argparse.Namespace) -> int:
 
     manifest_path = save_run_manifest(
         output_root,
-        {
-            "command": args.command,
-            "data_yaml": str(data_yaml),
-            "weights_path": str(weights_path),
-            "prediction_outputs": outputs,
-        },
+        add_manifest_context(
+            args,
+            {
+                "command": args.command,
+                "data_yaml": str(data_yaml),
+                "weights_path": str(weights_path),
+                "prediction_outputs": outputs,
+            },
+        ),
     )
     print(json.dumps(outputs, indent=2))
     print(f"Manifest saved to: {manifest_path}")
@@ -406,7 +502,7 @@ def handle_predict(args: argparse.Namespace) -> int:
 
 def handle_all(args: argparse.Namespace) -> int:
     output_root = resolve_path(args.output_root)
-    data_yaml = resolve_data_yaml(args, allow_download=not args.data)
+    data_yaml = resolve_data_yaml(args, allow_download=True)
 
     weights_path = run_train(
         data_yaml=data_yaml,
@@ -446,13 +542,16 @@ def handle_all(args: argparse.Namespace) -> int:
 
     manifest_path = save_run_manifest(
         output_root,
-        {
-            "command": args.command,
-            "data_yaml": str(data_yaml),
-            "weights_path": str(weights_path),
-            "validation_metrics": metrics,
-            "prediction_outputs": outputs,
-        },
+        add_manifest_context(
+            args,
+            {
+                "command": args.command,
+                "data_yaml": str(data_yaml),
+                "weights_path": str(weights_path),
+                "validation_metrics": metrics,
+                "prediction_outputs": outputs,
+            },
+        ),
     )
     print(f"Training weights: {weights_path}")
     print(json.dumps(metrics, indent=2))
@@ -461,7 +560,24 @@ def handle_all(args: argparse.Namespace) -> int:
     return 0
 
 
+def add_preset_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--preset",
+        choices=preset_names(),
+        help="Paper dataset preset. `lionfish` maps to hunter-gunter/lionfish-sserd v1 and `cots` maps to cots/google-images-ztm4n v2.",
+    )
+
+
+def add_download_if_missing_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--download-if-missing",
+        action="store_true",
+        help="If --data is omitted and the preset dataset is missing locally, download it from Roboflow first.",
+    )
+
+
 def add_shared_args(parser: argparse.ArgumentParser) -> None:
+    add_preset_args(parser)
     parser.add_argument("--data", help="Path to a dataset directory or data.yaml file.")
     parser.add_argument(
         "--output-root",
@@ -524,14 +640,18 @@ def add_roboflow_args(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Modernized YOLOv8 workflow for the Lionfish notebook."
+        description="Modernized YOLOv8 workflow for the public datasets used in the kluless13/paper repo."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    presets_parser = subparsers.add_parser("presets", help="Show built-in dataset presets from the paper repo.")
+    presets_parser.set_defaults(handler=handle_presets)
 
     download_parser = subparsers.add_parser(
         "download-dataset",
         help="Download a YOLOv8 dataset export from Roboflow.",
     )
+    add_preset_args(download_parser)
     download_parser.add_argument(
         "--output-root",
         default=str(DEFAULT_OUTPUT_ROOT),
@@ -542,16 +662,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     train_parser = subparsers.add_parser("train", help="Train a YOLOv8 model.")
     add_shared_args(train_parser)
+    add_download_if_missing_arg(train_parser)
+    add_roboflow_args(train_parser)
     add_training_args(train_parser)
     train_parser.set_defaults(handler=handle_train)
 
     validate_parser = subparsers.add_parser("validate", help="Validate a trained model.")
     add_shared_args(validate_parser)
+    add_download_if_missing_arg(validate_parser)
+    add_roboflow_args(validate_parser)
     add_prediction_args(validate_parser)
     validate_parser.set_defaults(handler=handle_validate)
 
     predict_parser = subparsers.add_parser("predict", help="Run image and video predictions.")
     add_shared_args(predict_parser)
+    add_download_if_missing_arg(predict_parser)
+    add_roboflow_args(predict_parser)
     add_prediction_args(predict_parser)
     predict_parser.set_defaults(handler=handle_predict)
 
@@ -560,9 +686,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optionally download the dataset, then train, validate, and predict in one run.",
     )
     add_shared_args(all_parser)
+    add_download_if_missing_arg(all_parser)
+    add_roboflow_args(all_parser)
     add_training_args(all_parser)
     add_prediction_args(all_parser)
-    add_roboflow_args(all_parser)
     all_parser.set_defaults(handler=handle_all)
 
     return parser
@@ -571,6 +698,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    apply_dataset_preset_defaults(args)
 
     try:
         return args.handler(args)
