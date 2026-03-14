@@ -1,90 +1,82 @@
-# Paper YOLOv8 Workflow
+# Paper and Roboflow YOLO Workflow
 
-This workspace contains a modern local replacement for the older Colab YOLOv8 notebooks in the public `kluless13/paper` repo.
+This workspace now supports two lionfish paths:
 
-Instead of notebook magics like `!pip`, `%cd`, and `!yolo`, [`lionfish_yolo.py`](./lionfish_yolo.py) gives you a reusable CLI for the paper's YOLOv8 experiments.
+- a current Roboflow-backed lionfish preset for local YOLOv8 training and hosted inference
+- the original paper datasets under the `paper-lionfish` and `cots` presets
 
-Built-in dataset presets from the paper:
+## Recommended Python
 
-- `lionfish` -> Roboflow `hunter-gunter/lionfish-sserd` version `1`
-- `cots` -> Roboflow `cots/google-images-ztm4n` version `2`
-
-## Recommended environment
-
-Current Ultralytics releases are much happier on Python 3.10-3.12 than on Python 3.14.
+Use Python 3.11 on this machine, not the default 3.14 interpreter.
 
 ```powershell
-py -3.12 -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -e .
+py -3.11 -m pip install -e .
 ```
 
-## Show the built-in presets
+## Show presets
 
 ```powershell
-python .\lionfish_yolo.py presets
+py -3.11 .\lionfish_yolo.py presets
 ```
 
 ## Roboflow API key
-
-The datasets in the paper came from Roboflow, so set an API key before download commands:
 
 ```powershell
 $env:ROBOFLOW_API_KEY = "your-api-key"
 ```
 
-## Reproduce the Lionfish YOLOv8 workflow
+## Current lionfish workflow
 
-Download the paper dataset:
+Download the newer lionfish dataset:
 
 ```powershell
-python .\lionfish_yolo.py download-dataset --preset lionfish
+py -3.11 .\lionfish_yolo.py download-dataset --preset lionfish
 ```
 
-Train:
+Train locally on the newer lionfish dataset:
 
 ```powershell
-python .\lionfish_yolo.py train --preset lionfish
+py -3.11 .\lionfish_yolo.py train --preset lionfish --download-if-missing
 ```
 
-Or let the script download automatically if it is missing:
+Run the full local train/validate/predict flow:
 
 ```powershell
-python .\lionfish_yolo.py train --preset lionfish --download-if-missing
+py -3.11 .\lionfish_yolo.py all --preset lionfish --download-if-missing
 ```
 
-Run the whole flow from the paper in one command:
+Run hosted Roboflow inference instead of local training:
 
 ```powershell
-python .\lionfish_yolo.py all --preset lionfish --download-if-missing
+py -3.11 .\lionfish_yolo.py hosted-predict --preset lionfish --download-if-missing
 ```
 
-## Reproduce the COTS YOLOv8 workflow
+Hosted inference on your own image or image directory:
 
 ```powershell
-python .\lionfish_yolo.py all --preset cots --download-if-missing
+py -3.11 .\lionfish_yolo.py hosted-predict --preset lionfish --source C:\path\to\images
 ```
 
-## Predict on a paper video or your own clip
+## Original paper datasets
+
+Paper Lionfish:
 
 ```powershell
-python .\lionfish_yolo.py predict --preset lionfish --video C:\path\to\LFclip.mp4
-python .\lionfish_yolo.py predict --preset cots --video C:\path\to\cotsclip1.mp4
+py -3.11 .\lionfish_yolo.py all --preset paper-lionfish --download-if-missing
 ```
 
-## Use your own dataset instead
-
-If you are not reproducing the paper datasets, pass a local `data.yaml` directly:
+Paper COTS:
 
 ```powershell
-python .\lionfish_yolo.py train --data .\datasets\my-dataset\data.yaml
+py -3.11 .\lionfish_yolo.py all --preset cots --download-if-missing
+```
+
+## Your own dataset
+
+```powershell
+py -3.11 .\lionfish_yolo.py train --data .\datasets\my-dataset\data.yaml
 ```
 
 ## Outputs
 
-By default the runs go to:
-
-- `runs\paper\lionfish`
-- `runs\paper\cots`
-
-Each command writes `last_run.json` in the output root so the latest dataset path, weights path, metrics, and prediction directories are easy to find.
+By default, each preset writes under `runs\paper\<preset>` and updates `last_run.json` with the latest dataset, weights, metrics, or hosted prediction outputs.
