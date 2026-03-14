@@ -255,7 +255,7 @@ def normalize_split_entry(data_yaml: Path, split_value: Any) -> tuple[Any, bool]
 
     direct_candidate = (dataset_root / as_path).resolve()
     if direct_candidate.exists():
-        return split_value.replace('\', '/'), False
+        return split_value.replace('\\', '/'), False
 
     trimmed_parts = [part for part in as_path.parts if part not in ('.', '..')]
     if trimmed_parts:
