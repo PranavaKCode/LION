@@ -1,4 +1,4 @@
-﻿import styles from "./page.module.css";
+import styles from "./page.module.css";
 import { GalleryFrame } from "./components/gallery-frame";
 import { getLionMetrics } from "./lib/lion-data";
 
@@ -400,8 +400,8 @@ export default async function Home() {
               <h2>Neubrutal reefs, clear tooling, and enough atmosphere to feel alive.</h2>
             </div>
             <div className={styles.footerActions}>
-              <a className={styles.primaryButton} href="#top">Capture Desktop</a>
-              <a className={styles.secondaryButton} href="#gallery">Capture Mobile</a>
+              <a className={styles.primaryButton} href="#live-lab">Open Live Lab</a>
+              <a className={styles.secondaryButton} href="#gallery">Review Gallery</a>
             </div>
           </div>
           <div className={styles.footerGrid}>
@@ -464,4 +464,6 @@ export default async function Home() {
     </main>
   );
 }
+
+
 
