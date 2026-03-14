@@ -1,22 +1,13 @@
-# Paper and Roboflow YOLO Workflow
+﻿# Hosted Lionfish Detection
 
-This workspace now supports two lionfish paths:
+This repo is now focused on one workflow: running the hosted Roboflow lionfish detector on images and video.
 
-- a current Roboflow-backed lionfish preset for local YOLOv8 training and hosted inference
-- the original paper datasets under the `paper-lionfish` and `cots` presets
-
-## Recommended Python
+## Python
 
 Use Python 3.11 on this machine, not the default 3.14 interpreter.
 
 ```powershell
 py -3.11 -m pip install -e .
-```
-
-## Show presets
-
-```powershell
-py -3.11 .\lionfish_yolo.py presets
 ```
 
 ## Roboflow API key
@@ -25,58 +16,38 @@ py -3.11 .\lionfish_yolo.py presets
 $env:ROBOFLOW_API_KEY = "your-api-key"
 ```
 
-## Current lionfish workflow
-
-Download the newer lionfish dataset:
+## Show the preset
 
 ```powershell
-py -3.11 .\lionfish_yolo.py download-dataset --preset lionfish
+py -3.11 .\lionfish_yolo.py presets
 ```
 
-Train locally on the newer lionfish dataset:
+## Run on a video
 
 ```powershell
-py -3.11 .\lionfish_yolo.py train --preset lionfish --download-if-missing
+py -3.11 .\lionfish_yolo.py hosted-predict --video "C:\Users\goodp\Downloads\120391-720880500_small.mp4"
 ```
 
-Run the full local train/validate/predict flow:
+## Run on one image
 
 ```powershell
-py -3.11 .\lionfish_yolo.py all --preset lionfish --download-if-missing
+py -3.11 .\lionfish_yolo.py hosted-predict --source "C:\path\to\lionfish.jpg"
 ```
 
-Run hosted Roboflow inference instead of local training:
+## Run on an image folder
 
 ```powershell
-py -3.11 .\lionfish_yolo.py hosted-predict --preset lionfish --download-if-missing
+py -3.11 .\lionfish_yolo.py hosted-predict --source "C:\path\to\images"
 ```
 
-Hosted inference on your own image or image directory:
+## Override the model manually
 
 ```powershell
-py -3.11 .\lionfish_yolo.py hosted-predict --preset lionfish --source C:\path\to\images
-```
-
-## Original paper datasets
-
-Paper Lionfish:
-
-```powershell
-py -3.11 .\lionfish_yolo.py all --preset paper-lionfish --download-if-missing
-```
-
-Paper COTS:
-
-```powershell
-py -3.11 .\lionfish_yolo.py all --preset cots --download-if-missing
-```
-
-## Your own dataset
-
-```powershell
-py -3.11 .\lionfish_yolo.py train --data .\datasets\my-dataset\data.yaml
+py -3.11 .\lionfish_yolo.py hosted-predict --rf-model-id "workspace/project/version" --video "C:\path\to\clip.mp4"
 ```
 
 ## Outputs
 
-By default, each preset writes under `runs\paper\<preset>` and updates `last_run.json` with the latest dataset, weights, metrics, or hosted prediction outputs.
+By default the script writes to `runs\lionfish\hosted-predict` and updates `runs\lionfish\last_run.json`.
+
+Use `--no-json` if you only want rendered images or video without the sidecar JSON files.

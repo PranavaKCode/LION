@@ -1,21 +1,19 @@
-[build-system]
+﻿[build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "paper-yolov8"
-version = "0.2.0"
-description = "Modern YOLOv8 reproduction workflow for the public datasets used in the kluless13/paper repo."
+name = "lionfish-hosted"
+version = "0.3.0"
+description = "Hosted Roboflow lionfish inference for images and video."
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
-  "ultralytics>=8.3.0,<9",
   "roboflow>=1.1.0,<2",
-  "pyyaml>=6.0,<7",
+  "opencv-python>=4.8,<5",
 ]
 
 [project.scripts]
-paper-yolo = "lionfish_yolo:main"
 lionfish-yolo = "lionfish_yolo:main"
 
 [tool.setuptools]
