@@ -179,14 +179,28 @@ def resolve_dataset_root(args: argparse.Namespace) -> Path:
     return resolve_path(DEFAULT_DATASET_ROOT / f"{args.rf_project}-v{args.rf_version}")
 
 
+def find_data_yaml(dataset_root: Path) -> Path | None:
+    direct_match = dataset_root / "data.yaml"
+    if direct_match.exists():
+        return direct_match.resolve()
+
+    if not dataset_root.exists():
+        return None
+
+    matches = sorted(dataset_root.rglob("data.yaml"), key=lambda path: (len(path.parts), str(path).lower()))
+    if matches:
+        return matches[0].resolve()
+
+    return None
+
+
 def local_dataset_yaml(args: argparse.Namespace) -> Path | None:
     try:
         dataset_root = resolve_dataset_root(args)
     except CliError:
         return None
 
-    candidate = dataset_root / "data.yaml"
-    return candidate.resolve() if candidate.exists() else None
+    return find_data_yaml(dataset_root)
 
 
 def download_dataset(args: argparse.Namespace) -> Path:
@@ -207,15 +221,18 @@ def download_dataset(args: argparse.Namespace) -> Path:
     Roboflow = require_roboflow()
     api_key = resolve_api_key(args)
     dataset_root = resolve_dataset_root(args)
-    dataset_root.mkdir(parents=True, exist_ok=True)
+    dataset_root.parent.mkdir(parents=True, exist_ok=True)
 
     rf = Roboflow(api_key=api_key)
     project = rf.workspace(args.rf_workspace).project(args.rf_project)
     version = project.version(args.rf_version)
-    dataset = version.download("yolov8", location=str(dataset_root))
+    dataset = version.download("yolov8", location=str(dataset_root), overwrite=True)
 
-    data_yaml = ensure_exists(Path(dataset.location) / "data.yaml", "Downloaded dataset YAML")
-    return data_yaml.resolve()
+    data_yaml = find_data_yaml(Path(dataset.location))
+    if data_yaml:
+        return data_yaml
+
+    raise CliError(f"Downloaded dataset YAML does not exist anywhere under: {Path(dataset.location).resolve()}")
 
 
 def resolve_data_yaml(args: argparse.Namespace, allow_download: bool) -> Path:
