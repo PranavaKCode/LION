@@ -1,0 +1,75 @@
+{
+  "preset": "lionfish",
+  "command": "hosted-predict",
+  "hosted_model": "su-eaelw/lionfish-qs3tq/49",
+  "prediction_outputs": {
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-0_jpg.rf.06941a03cabb063caa373573523f7fdd.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0001_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-0_jpg.rf.06941a03cabb063caa373573523f7fdd_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0001_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-0_jpg.rf.06941a03cabb063caa373573523f7fdd.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-102_jpg.rf.bf8f90b0ba295e9f07f84cb44b5afbd1.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0002_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-102_jpg.rf.bf8f90b0ba295e9f07f84cb44b5afbd1_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0002_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-102_jpg.rf.bf8f90b0ba295e9f07f84cb44b5afbd1.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-107_jpg.rf.f34972433d1e0141b55e7cce99a62fd6.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0003_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-107_jpg.rf.f34972433d1e0141b55e7cce99a62fd6_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0003_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-107_jpg.rf.f34972433d1e0141b55e7cce99a62fd6.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-117_jpg.rf.211c1c08c502f76e771bd61380ad1e2d.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0004_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-117_jpg.rf.211c1c08c502f76e771bd61380ad1e2d_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0004_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-117_jpg.rf.211c1c08c502f76e771bd61380ad1e2d.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-124_jpg.rf.47c4a152b811564ad1e5e5500754bc7a.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0005_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-124_jpg.rf.47c4a152b811564ad1e5e5500754bc7a_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0005_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-124_jpg.rf.47c4a152b811564ad1e5e5500754bc7a.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-132_jpg.rf.582735d803fe4c25567a17560d792cc0.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0006_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-132_jpg.rf.582735d803fe4c25567a17560d792cc0_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0006_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-132_jpg.rf.582735d803fe4c25567a17560d792cc0.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-32_jpg.rf.d2d2942758c23e268f8b0c09a4021e43.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0007_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-32_jpg.rf.d2d2942758c23e268f8b0c09a4021e43_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0007_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-32_jpg.rf.d2d2942758c23e268f8b0c09a4021e43.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-3_jpg.rf.c2abf4d55e58fd88f2dd972900bb88b9.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0008_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-3_jpg.rf.c2abf4d55e58fd88f2dd972900bb88b9_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0008_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-3_jpg.rf.c2abf4d55e58fd88f2dd972900bb88b9.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-59_jpg.rf.41a68871e8eb0d409b3096e90db05660.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0009_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-59_jpg.rf.41a68871e8eb0d409b3096e90db05660_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0009_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-59_jpg.rf.41a68871e8eb0d409b3096e90db05660.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-63_jpg.rf.1c281f1d55227dd30c570ae40567042d.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0010_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-63_jpg.rf.1c281f1d55227dd30c570ae40567042d_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0010_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-63_jpg.rf.1c281f1d55227dd30c570ae40567042d.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-65_jpg.rf.d81d1c072e0500c659b544ce797e0c4f.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0011_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-65_jpg.rf.d81d1c072e0500c659b544ce797e0c4f_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0011_Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-65_jpg.rf.d81d1c072e0500c659b544ce797e0c4f.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-15_jpg.rf.b65de36cb97413570b6bf0f2c4f2087e.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0012_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-15_jpg.rf.b65de36cb97413570b6bf0f2c4f2087e_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0012_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-15_jpg.rf.b65de36cb97413570b6bf0f2c4f2087e.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-34_jpg.rf.3a26eb1ddb90796b2dd33ec8b215648a.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0013_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-34_jpg.rf.3a26eb1ddb90796b2dd33ec8b215648a_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0013_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-34_jpg.rf.3a26eb1ddb90796b2dd33ec8b215648a.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-54_jpg.rf.a97b41e8173100437dc61c57a23ab983.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0014_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-54_jpg.rf.a97b41e8173100437dc61c57a23ab983_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0014_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-54_jpg.rf.a97b41e8173100437dc61c57a23ab983.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-55_jpg.rf.0affb31b1853dd79a743c7a31b022758.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0015_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-55_jpg.rf.0affb31b1853dd79a743c7a31b022758_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0015_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-55_jpg.rf.0affb31b1853dd79a743c7a31b022758.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-58_jpg.rf.4f68ae8ba064c403d1710cf3525ce4b4.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0016_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-58_jpg.rf.4f68ae8ba064c403d1710cf3525ce4b4_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0016_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-58_jpg.rf.4f68ae8ba064c403d1710cf3525ce4b4.json"
+    },
+    "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-6_jpg.rf.06c9700744b2b786c8f79f70df204fe8.jpg": {
+      "image": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0017_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-6_jpg.rf.06c9700744b2b786c8f79f70df204fe8_pred.jpg",
+      "json": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\runs\\paper\\lionfish\\hosted-predict\\0017_Following-two-lionfish-swimming-in-the-sea---YouTube---Google-Chrome-2021-11-05-21-40-15_mp4-6_jpg.rf.06c9700744b2b786c8f79f70df204fe8.json"
+    }
+  }
+}

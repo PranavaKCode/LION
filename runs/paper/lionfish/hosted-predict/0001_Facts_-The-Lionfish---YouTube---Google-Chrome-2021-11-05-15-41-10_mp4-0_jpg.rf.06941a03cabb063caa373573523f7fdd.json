@@ -1,0 +1,20 @@
+{
+  "predictions": [
+    {
+      "x": 480,
+      "y": 456,
+      "width": 462,
+      "height": 762,
+      "confidence": 0.748584508895874,
+      "class": "lion fish",
+      "class_id": 0,
+      "detection_id": "8445f23d-b905-485b-9fff-08c60c781582",
+      "image_path": "C:\\Users\\goodp\\Downloads\\picoctf\\pizzaroutes\\datasets\\lionfish-1\\test\\images\\Facts_-The-Lionfish---YouTube---Google-Chrome-2021-11-05-15-41-10_mp4-0_jpg.rf.06941a03cabb063caa373573523f7fdd.jpg",
+      "prediction_type": "ObjectDetectionModel"
+    }
+  ],
+  "image": {
+    "width": "1028",
+    "height": "1028"
+  }
+}
