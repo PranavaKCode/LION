@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['Lionfish']
+
+roboflow:
+  workspace: hunter-gunter
+  project: lionfish-sserd
+  version: 1
+  license: Public Domain
+  url: https://universe.roboflow.com/hunter-gunter/lionfish-sserd/dataset/1
