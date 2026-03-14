@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 DEFAULT_MODEL = "yolov8s.pt"
@@ -15,9 +15,22 @@ DEFAULT_EPOCHS = 75
 DEFAULT_IMAGE_SIZE = 800
 DEFAULT_CONFIDENCE = 0.25
 DEFAULT_ROBOFLOW_KEY_ENV = "ROBOFLOW_API_KEY"
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".m4v"}
 DATASET_PRESETS: dict[str, dict[str, Any]] = {
     "lionfish": {
-        "label": "Lionfish",
+        "label": "Lionfish (current Roboflow)",
+        "rf_workspace": "su-eaelw",
+        "rf_project": "lionfish-qs3tq-dbget",
+        "rf_version": "latest",
+        "dataset_dir": "lionfish-qs3tq-dbget",
+        "hosted_model_workspace": "su-eaelw",
+        "hosted_model_project": "lionfish-qs3tq",
+        "hosted_model_version": 49,
+        "source_repo": "roboflow",
+    },
+    "paper-lionfish": {
+        "label": "Lionfish (paper dataset)",
         "rf_workspace": "hunter-gunter",
         "rf_project": "lionfish-sserd",
         "rf_version": 1,
@@ -114,6 +127,12 @@ def preset_names() -> list[str]:
     return sorted(DATASET_PRESETS)
 
 
+def get_preset(preset_name: str | None) -> dict[str, Any] | None:
+    if not preset_name:
+        return None
+    return DATASET_PRESETS.get(preset_name)
+
+
 def add_manifest_context(args: argparse.Namespace, manifest: dict[str, Any]) -> dict[str, Any]:
     if getattr(args, "preset", None):
         manifest = {"preset": args.preset, **manifest}
@@ -121,21 +140,26 @@ def add_manifest_context(args: argparse.Namespace, manifest: dict[str, Any]) -> 
 
 
 def apply_dataset_preset_defaults(args: argparse.Namespace) -> None:
-    preset_name = getattr(args, "preset", None)
-    if not preset_name:
+    preset = get_preset(getattr(args, "preset", None))
+    if not preset:
         return
 
-    preset = DATASET_PRESETS[preset_name]
     if hasattr(args, "rf_workspace") and not getattr(args, "rf_workspace", None):
-        args.rf_workspace = preset["rf_workspace"]
+        args.rf_workspace = preset.get("rf_workspace")
     if hasattr(args, "rf_project") and not getattr(args, "rf_project", None):
-        args.rf_project = preset["rf_project"]
+        args.rf_project = preset.get("rf_project")
     if hasattr(args, "rf_version") and getattr(args, "rf_version", None) is None:
-        args.rf_version = preset["rf_version"]
-    if hasattr(args, "dataset_root") and not getattr(args, "dataset_root", None):
+        args.rf_version = preset.get("rf_version")
+    if hasattr(args, "dataset_root") and not getattr(args, "dataset_root", None) and preset.get("dataset_dir"):
         args.dataset_root = str(DEFAULT_DATASET_ROOT / preset["dataset_dir"])
+    if hasattr(args, "rf_model_workspace") and not getattr(args, "rf_model_workspace", None):
+        args.rf_model_workspace = preset.get("hosted_model_workspace")
+    if hasattr(args, "rf_model_project") and not getattr(args, "rf_model_project", None):
+        args.rf_model_project = preset.get("hosted_model_project")
+    if hasattr(args, "rf_model_version") and getattr(args, "rf_model_version", None) is None:
+        args.rf_model_version = preset.get("hosted_model_version")
     if hasattr(args, "output_root") and getattr(args, "output_root", None) == str(DEFAULT_OUTPUT_ROOT):
-        args.output_root = str(DEFAULT_OUTPUT_ROOT / preset_name)
+        args.output_root = str(DEFAULT_OUTPUT_ROOT / getattr(args, "preset"))
 
 
 def resolve_data_yaml_argument(path_text: str) -> Path:
@@ -179,6 +203,32 @@ def resolve_dataset_root(args: argparse.Namespace) -> Path:
     return resolve_path(DEFAULT_DATASET_ROOT / f"{args.rf_project}-v{args.rf_version}")
 
 
+def resolve_project_version(project: Any, requested_version: str | int | None) -> int:
+    version_info = project.get_version_information()
+    version_numbers = sorted(
+        int(os.path.basename(str(version["id"])))
+        for version in version_info
+        if str(version.get("id", "")).split("/")[-1].isdigit()
+    )
+    if not version_numbers:
+        raise CliError("No downloadable Roboflow versions were returned for this project.")
+
+    if requested_version is None or str(requested_version).strip().lower() == "latest":
+        return version_numbers[-1]
+
+    try:
+        version_number = int(str(requested_version).strip())
+    except ValueError as exc:
+        raise CliError("Roboflow versions must be integers or `latest`.") from exc
+
+    if version_number not in version_numbers:
+        raise CliError(
+            f"Roboflow version {version_number} was not found. Available versions: {', '.join(map(str, version_numbers))}"
+        )
+
+    return version_number
+
+
 def find_data_yaml(dataset_root: Path) -> Path | None:
     direct_match = dataset_root / "data.yaml"
     if direct_match.exists():
@@ -194,13 +244,61 @@ def find_data_yaml(dataset_root: Path) -> Path | None:
     return None
 
 
+def normalize_split_entry(data_yaml: Path, split_value: Any) -> tuple[Any, bool]:
+    if not isinstance(split_value, str) or not split_value.strip():
+        return split_value, False
+
+    dataset_root = data_yaml.parent
+    as_path = Path(split_value)
+    if as_path.is_absolute() and as_path.exists():
+        return split_value, False
+
+    direct_candidate = (dataset_root / as_path).resolve()
+    if direct_candidate.exists():
+        return split_value.replace('\', '/'), False
+
+    trimmed_parts = [part for part in as_path.parts if part not in ('.', '..')]
+    if trimmed_parts:
+        trimmed_candidate = (dataset_root.joinpath(*trimmed_parts)).resolve()
+        if trimmed_candidate.exists():
+            return trimmed_candidate.relative_to(dataset_root).as_posix(), True
+
+        basename_candidate = next(dataset_root.rglob(trimmed_parts[-1]), None)
+        if basename_candidate and basename_candidate.exists():
+            return basename_candidate.relative_to(dataset_root).as_posix(), True
+
+    return split_value, False
+
+
+def normalize_data_yaml(data_yaml: Path) -> Path:
+    yaml = require_yaml()
+    data = yaml.safe_load(data_yaml.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise CliError(f"Expected {data_yaml} to contain a YAML mapping.")
+
+    changed = False
+    for split_name in ("train", "val", "test"):
+        new_value, split_changed = normalize_split_entry(data_yaml, data.get(split_name))
+        if split_changed:
+            data[split_name] = new_value
+            changed = True
+
+    if changed:
+        data_yaml.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    return data_yaml.resolve()
+
+
 def local_dataset_yaml(args: argparse.Namespace) -> Path | None:
     try:
         dataset_root = resolve_dataset_root(args)
     except CliError:
         return None
 
-    return find_data_yaml(dataset_root)
+    data_yaml = find_data_yaml(dataset_root)
+    if data_yaml:
+        return normalize_data_yaml(data_yaml)
+    return None
 
 
 def download_dataset(args: argparse.Namespace) -> Path:
@@ -224,20 +322,20 @@ def download_dataset(args: argparse.Namespace) -> Path:
     dataset_root.parent.mkdir(parents=True, exist_ok=True)
 
     rf = Roboflow(api_key=api_key)
-    project = rf.workspace(args.rf_workspace).project(args.rf_project)
-    version = project.version(args.rf_version)
-    dataset = version.download("yolov8", location=str(dataset_root), overwrite=True)
+    project = rf.project(args.rf_project, the_workspace=args.rf_workspace)
+    version_number = resolve_project_version(project, args.rf_version)
+    dataset = project.version(version_number).download("yolov8", location=str(dataset_root), overwrite=True)
 
     data_yaml = find_data_yaml(Path(dataset.location))
     if data_yaml:
-        return data_yaml
+        return normalize_data_yaml(data_yaml)
 
     raise CliError(f"Downloaded dataset YAML does not exist anywhere under: {Path(dataset.location).resolve()}")
 
 
 def resolve_data_yaml(args: argparse.Namespace, allow_download: bool) -> Path:
     if args.data:
-        return resolve_data_yaml_argument(args.data)
+        return normalize_data_yaml(resolve_data_yaml_argument(args.data))
 
     inferred_yaml = local_dataset_yaml(args)
     if inferred_yaml:
@@ -267,6 +365,7 @@ def load_dataset_config(data_yaml: Path) -> dict[str, Any]:
 
 
 def resolve_split_source(data_yaml: Path, split_name: str) -> Path | None:
+    data_yaml = normalize_data_yaml(data_yaml)
     config = load_dataset_config(data_yaml)
     split_value = config.get(split_name)
     if not split_value:
@@ -277,6 +376,15 @@ def resolve_split_source(data_yaml: Path, split_name: str) -> Path | None:
         candidate = (data_yaml.parent / candidate).resolve()
 
     return candidate if candidate.exists() else None
+
+
+def require_dataset_splits(data_yaml: Path, split_names: Iterable[str], action: str) -> None:
+    missing = [split_name for split_name in split_names if resolve_split_source(data_yaml, split_name) is None]
+    if missing:
+        raise CliError(
+            f"{action} requires dataset split(s) {', '.join(missing)}, but they are missing under {data_yaml.parent}. "
+            "If you only want inference, use `hosted-predict` with the Roboflow model instead."
+        )
 
 
 def run_train(
@@ -373,6 +481,125 @@ def run_predict(
     raise CliError(f"Prediction finished but output directory could not be located for {source}.")
 
 
+def collect_image_inputs(source: Path) -> list[Path]:
+    if not source.exists():
+        raise CliError(f"Prediction source does not exist: {source}")
+
+    if source.is_file():
+        suffix = source.suffix.lower()
+        if suffix in VIDEO_SUFFIXES:
+            raise CliError("Hosted Roboflow inference currently supports images or directories, not video files.")
+        if suffix not in IMAGE_SUFFIXES:
+            raise CliError(f"Unsupported image type for hosted inference: {source}")
+        return [source]
+
+    image_paths = sorted(path for path in source.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES)
+    if not image_paths:
+        raise CliError(f"No images were found under {source}")
+    return image_paths
+
+
+def resolve_hosted_model_spec(args: argparse.Namespace) -> tuple[str, str, int]:
+    workspace = getattr(args, "rf_model_workspace", None)
+    project = getattr(args, "rf_model_project", None)
+    version = getattr(args, "rf_model_version", None)
+    model_id = getattr(args, "rf_model_id", None)
+
+    if model_id:
+        parts = [part for part in model_id.split("/") if part]
+        if len(parts) == 2:
+            project, version = parts
+        elif len(parts) == 3:
+            workspace, project, version = parts
+        else:
+            raise CliError("Hosted model ids must look like `project/version` or `workspace/project/version`.")
+
+    preset = get_preset(getattr(args, "preset", None)) or {}
+    workspace = workspace or preset.get("hosted_model_workspace") or getattr(args, "rf_workspace", None)
+    project = project or preset.get("hosted_model_project")
+    version = version or preset.get("hosted_model_version")
+
+    if not workspace or not project or version is None:
+        raise CliError(
+            "A hosted Roboflow model could not be inferred. Pass --rf-model-id or set a preset with hosted model info."
+        )
+
+    try:
+        version_number = int(str(version))
+    except ValueError as exc:
+        raise CliError("Hosted Roboflow model versions must be integers.") from exc
+
+    return workspace, project, version_number
+
+
+def load_hosted_model(args: argparse.Namespace):
+    Roboflow = require_roboflow()
+    api_key = resolve_api_key(args)
+    workspace, project_name, version_number = resolve_hosted_model_spec(args)
+
+    rf = Roboflow(api_key=api_key)
+    project = rf.project(project_name, the_workspace=workspace)
+    version = project.version(version_number)
+    model = getattr(version, "model", None)
+    if model is None:
+        raise CliError(
+            f"Roboflow project {workspace}/{project_name} version {version_number} does not have a hosted model attached."
+        )
+
+    return model, workspace, project_name, version_number
+
+
+def hosted_prediction_sources(args: argparse.Namespace) -> list[Path]:
+    if args.video:
+        raise CliError("Hosted Roboflow inference currently supports images or directories only, not video files.")
+
+    if args.source:
+        return collect_image_inputs(resolve_path(args.source))
+
+    data_yaml = resolve_data_yaml(args, allow_download=False)
+    test_source = resolve_split_source(data_yaml, "test")
+    if test_source is None:
+        raise CliError("No hosted prediction source was found. Pass --source or provide a dataset with a test split.")
+    return collect_image_inputs(test_source)
+
+
+def handle_hosted_predict(args: argparse.Namespace) -> int:
+    output_root = resolve_path(args.output_root)
+    run_dir = output_root / args.hosted_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    model, workspace, project_name, version_number = load_hosted_model(args)
+    image_sources = hosted_prediction_sources(args)
+
+    outputs: dict[str, dict[str, str]] = {}
+    for index, image_path in enumerate(image_sources, start=1):
+        prediction = model.predict(str(image_path), confidence=int(args.conf * 100))
+        basename = f"{index:04d}_{image_path.stem}" if len(image_sources) > 1 else image_path.stem
+        image_output = run_dir / f"{basename}_pred.jpg"
+        json_output = run_dir / f"{basename}.json"
+        prediction.save(str(image_output))
+        json_output.write_text(json.dumps(to_jsonable(prediction.json()), indent=2), encoding="utf-8")
+        outputs[str(image_path)] = {
+            "image": str(image_output.resolve()),
+            "json": str(json_output.resolve()),
+        }
+
+    manifest_path = save_run_manifest(
+        output_root,
+        add_manifest_context(
+            args,
+            {
+                "command": args.command,
+                "hosted_model": f"{workspace}/{project_name}/{version_number}",
+                "prediction_outputs": outputs,
+            },
+        ),
+    )
+    print(json.dumps(outputs, indent=2))
+    print(f"Manifest saved to: {manifest_path}")
+    return 0
+
+
 def default_weights_path(output_root: Path, run_name: str) -> Path:
     return output_root / run_name / "weights" / "best.pt"
 
@@ -380,10 +607,19 @@ def default_weights_path(output_root: Path, run_name: str) -> Path:
 def handle_presets(args: argparse.Namespace) -> int:
     for name in preset_names():
         preset = DATASET_PRESETS[name]
+        dataset_text = (
+            f"{preset['rf_workspace']}/{preset['rf_project']} v{preset['rf_version']}"
+            if preset.get('rf_workspace') and preset.get('rf_project')
+            else 'no dataset preset'
+        )
+        hosted_text = (
+            f"{preset['hosted_model_workspace']}/{preset['hosted_model_project']}/{preset['hosted_model_version']}"
+            if preset.get('hosted_model_workspace') and preset.get('hosted_model_project')
+            else 'none'
+        )
         print(
-            f"{name}: {preset['label']} | "
-            f"{preset['rf_workspace']}/{preset['rf_project']} v{preset['rf_version']} | "
-            f"local folder: {DEFAULT_DATASET_ROOT / preset['dataset_dir']}"
+            f"{name}: {preset['label']} | dataset: {dataset_text} | "
+            f"hosted model: {hosted_text} | local folder: {DEFAULT_DATASET_ROOT / preset['dataset_dir']}"
         )
     return 0
 
@@ -409,6 +645,7 @@ def handle_download_dataset(args: argparse.Namespace) -> int:
 def handle_train(args: argparse.Namespace) -> int:
     output_root = resolve_path(args.output_root)
     data_yaml = resolve_data_yaml(args, allow_download=False)
+    require_dataset_splits(data_yaml, ("train", "val"), "Training")
     weights_path = run_train(
         data_yaml=data_yaml,
         model_name=args.model,
@@ -439,6 +676,7 @@ def handle_train(args: argparse.Namespace) -> int:
 def handle_validate(args: argparse.Namespace) -> int:
     output_root = resolve_path(args.output_root)
     data_yaml = resolve_data_yaml(args, allow_download=False)
+    require_dataset_splits(data_yaml, ("val",), "Validation")
     weights_path = ensure_exists(
         resolve_path(args.weights or default_weights_path(output_root, args.train_name)),
         "Weights file",
@@ -530,6 +768,7 @@ def handle_predict(args: argparse.Namespace) -> int:
 def handle_all(args: argparse.Namespace) -> int:
     output_root = resolve_path(args.output_root)
     data_yaml = resolve_data_yaml(args, allow_download=True)
+    require_dataset_splits(data_yaml, ("train", "val"), "Training")
 
     weights_path = run_train(
         data_yaml=data_yaml,
@@ -591,7 +830,10 @@ def add_preset_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--preset",
         choices=preset_names(),
-        help="Paper dataset preset. `lionfish` maps to hunter-gunter/lionfish-sserd v1 and `cots` maps to cots/google-images-ztm4n v2.",
+        help=(
+            "Dataset/model preset. `lionfish` uses the newer Roboflow project and hosted model, "
+            "`paper-lionfish` preserves the original paper dataset, and `cots` keeps the paper COTS dataset."
+        ),
     )
 
 
@@ -652,11 +894,26 @@ def add_prediction_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--conf", type=float, default=DEFAULT_CONFIDENCE, help="Prediction confidence threshold.")
 
 
+def add_hosted_model_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--rf-model-id",
+        help="Hosted Roboflow model id as `project/version` or `workspace/project/version`.",
+    )
+    parser.add_argument("--rf-model-workspace", help="Workspace slug for the hosted Roboflow model.")
+    parser.add_argument("--rf-model-project", help="Project slug for the hosted Roboflow model.")
+    parser.add_argument("--rf-model-version", help="Hosted Roboflow model version number.")
+    parser.add_argument(
+        "--hosted-name",
+        default="hosted-predict",
+        help="Run name for hosted Roboflow inference outputs.",
+    )
+
+
 def add_roboflow_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dataset-root", help="Directory used when downloading the Roboflow dataset.")
     parser.add_argument("--rf-workspace", help="Roboflow workspace slug.")
     parser.add_argument("--rf-project", help="Roboflow project slug.")
-    parser.add_argument("--rf-version", type=int, help="Roboflow dataset version.")
+    parser.add_argument("--rf-version", help="Roboflow dataset version or `latest`.")
     parser.add_argument("--rf-api-key", help="Roboflow API key. Prefer the environment variable instead.")
     parser.add_argument(
         "--rf-api-key-env",
@@ -667,11 +924,11 @@ def add_roboflow_args(parser: argparse.ArgumentParser) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Modernized YOLOv8 workflow for the public datasets used in the kluless13/paper repo."
+        description="Modernized YOLOv8 and Roboflow workflow for the marine-species projects referenced in kluless13/paper."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    presets_parser = subparsers.add_parser("presets", help="Show built-in dataset presets from the paper repo.")
+    presets_parser = subparsers.add_parser("presets", help="Show built-in dataset and hosted-model presets.")
     presets_parser.set_defaults(handler=handle_presets)
 
     download_parser = subparsers.add_parser(
@@ -687,7 +944,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_roboflow_args(download_parser)
     download_parser.set_defaults(handler=handle_download_dataset)
 
-    train_parser = subparsers.add_parser("train", help="Train a YOLOv8 model.")
+    train_parser = subparsers.add_parser("train", help="Train a YOLOv8 model locally.")
     add_shared_args(train_parser)
     add_download_if_missing_arg(train_parser)
     add_roboflow_args(train_parser)
@@ -701,12 +958,34 @@ def build_parser() -> argparse.ArgumentParser:
     add_prediction_args(validate_parser)
     validate_parser.set_defaults(handler=handle_validate)
 
-    predict_parser = subparsers.add_parser("predict", help="Run image and video predictions.")
+    predict_parser = subparsers.add_parser("predict", help="Run local YOLOv8 image and video predictions.")
     add_shared_args(predict_parser)
     add_download_if_missing_arg(predict_parser)
     add_roboflow_args(predict_parser)
     add_prediction_args(predict_parser)
     predict_parser.set_defaults(handler=handle_predict)
+
+    hosted_parser = subparsers.add_parser(
+        "hosted-predict",
+        help="Run inference with a hosted Roboflow model on images or directories.",
+    )
+    add_preset_args(hosted_parser)
+    hosted_parser.add_argument("--data", help="Path to a dataset directory or data.yaml file.")
+    hosted_parser.add_argument(
+        "--output-root",
+        default=str(DEFAULT_OUTPUT_ROOT),
+        help="Directory that receives hosted prediction outputs.",
+    )
+    hosted_parser.add_argument(
+        "--source",
+        help="Image file or directory of images. Defaults to the dataset test split when available.",
+    )
+    hosted_parser.add_argument("--video", help="Reserved for parity with local predict; hosted mode is image-only.")
+    hosted_parser.add_argument("--conf", type=float, default=DEFAULT_CONFIDENCE, help="Prediction confidence threshold.")
+    add_download_if_missing_arg(hosted_parser)
+    add_roboflow_args(hosted_parser)
+    add_hosted_model_args(hosted_parser)
+    hosted_parser.set_defaults(handler=handle_hosted_predict)
 
     all_parser = subparsers.add_parser(
         "all",
