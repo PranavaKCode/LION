@@ -488,7 +488,7 @@ def collect_image_inputs(source: Path) -> list[Path]:
     if source.is_file():
         suffix = source.suffix.lower()
         if suffix in VIDEO_SUFFIXES:
-            raise CliError("Hosted Roboflow inference currently supports images or directories, not video files.")
+            raise CliError("This source is a video file. Use hosted video prediction instead.")
         if suffix not in IMAGE_SUFFIXES:
             raise CliError(f"Unsupported image type for hosted inference: {source}")
         return [source]
@@ -549,18 +549,147 @@ def load_hosted_model(args: argparse.Namespace):
     return model, workspace, project_name, version_number
 
 
-def hosted_prediction_sources(args: argparse.Namespace) -> list[Path]:
+def resolve_hosted_inputs(args: argparse.Namespace) -> tuple[str, Path | list[Path]]:
     if args.video:
-        raise CliError("Hosted Roboflow inference currently supports images or directories only, not video files.")
+        video_path = ensure_exists(resolve_path(args.video), "Video source")
+        if not video_path.is_file() or video_path.suffix.lower() not in VIDEO_SUFFIXES:
+            raise CliError(f"Unsupported video source for hosted inference: {video_path}")
+        return "video", video_path
 
     if args.source:
-        return collect_image_inputs(resolve_path(args.source))
+        source_path = ensure_exists(resolve_path(args.source), "Prediction source")
+        if source_path.is_file() and source_path.suffix.lower() in VIDEO_SUFFIXES:
+            return "video", source_path
+        return "images", collect_image_inputs(source_path)
 
-    data_yaml = resolve_data_yaml(args, allow_download=False)
+    data_yaml = resolve_data_yaml(args, allow_download=getattr(args, "download_if_missing", False))
     test_source = resolve_split_source(data_yaml, "test")
     if test_source is None:
-        raise CliError("No hosted prediction source was found. Pass --source or provide a dataset with a test split.")
-    return collect_image_inputs(test_source)
+        raise CliError("No hosted prediction source was found. Pass --source/--video or provide a dataset with a test split.")
+    return "images", collect_image_inputs(test_source)
+
+
+def format_confidence_label(confidence: Any) -> str:
+    try:
+        value = float(confidence)
+    except (TypeError, ValueError):
+        return ""
+
+    if value <= 1.0:
+        return f"{value:.2f}"
+    return f"{value:.0f}%"
+
+
+def draw_hosted_detections(frame, predictions: list[dict[str, Any]], stroke: int = 2):
+    import cv2
+
+    annotated = frame.copy()
+    box_color = (36, 255, 12)
+    text_color = (0, 0, 0)
+
+    for prediction in predictions:
+        x = float(prediction.get("x", 0))
+        y = float(prediction.get("y", 0))
+        width = float(prediction.get("width", 0))
+        height = float(prediction.get("height", 0))
+        class_name = str(prediction.get("class", "object"))
+        confidence_text = format_confidence_label(prediction.get("confidence"))
+        label = f"{class_name} {confidence_text}".strip()
+
+        x1 = max(int(x - width / 2), 0)
+        y1 = max(int(y - height / 2), 0)
+        x2 = max(int(x + width / 2), 0)
+        y2 = max(int(y + height / 2), 0)
+
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), box_color, stroke)
+
+        if label:
+            (text_width, text_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+            text_top = max(y1 - text_height - baseline - 6, 0)
+            text_bottom = text_top + text_height + baseline + 6
+            text_right = min(x1 + text_width + 10, annotated.shape[1])
+            cv2.rectangle(annotated, (x1, text_top), (text_right, text_bottom), box_color, -1)
+            cv2.putText(
+                annotated,
+                label,
+                (x1 + 5, text_bottom - baseline - 3),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                text_color,
+                1,
+                cv2.LINE_AA,
+            )
+
+    return annotated
+
+
+def run_hosted_video_predict(
+    *,
+    model,
+    video_path: Path,
+    output_dir: Path,
+    confidence: float,
+) -> dict[str, str]:
+    import cv2
+
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise CliError(f"Could not open video source: {video_path}")
+
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    if width <= 0 or height <= 0:
+        capture.release()
+        raise CliError(f"Could not determine video dimensions for: {video_path}")
+
+    video_output = output_dir / f"{video_path.stem}_pred.mp4"
+    json_output = output_dir / f"{video_path.stem}.json"
+    writer = cv2.VideoWriter(str(video_output), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    if not writer.isOpened():
+        capture.release()
+        raise CliError(f"Could not create output video: {video_output}")
+
+    frame_results: list[dict[str, Any]] = []
+    frame_index = 0
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+
+            frame_index += 1
+            prediction = model.predict(frame, confidence=int(confidence * 100))
+            prediction_json = to_jsonable(prediction.json())
+            predictions = prediction_json.get("predictions", []) if isinstance(prediction_json, dict) else []
+            frame_results.append({"frame": frame_index, "predictions": predictions})
+            writer.write(draw_hosted_detections(frame, predictions))
+
+            if frame_index % 25 == 0:
+                print(f"Processed {frame_index} frames...")
+    finally:
+        capture.release()
+        writer.release()
+
+    json_output.write_text(
+        json.dumps(
+            {
+                "source": str(video_path.resolve()),
+                "fps": fps,
+                "width": width,
+                "height": height,
+                "frame_count": frame_index,
+                "frames": frame_results,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    return {
+        "video": str(video_output.resolve()),
+        "json": str(json_output.resolve()),
+    }
 
 
 def handle_hosted_predict(args: argparse.Namespace) -> int:
@@ -569,20 +698,32 @@ def handle_hosted_predict(args: argparse.Namespace) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     model, workspace, project_name, version_number = load_hosted_model(args)
-    image_sources = hosted_prediction_sources(args)
+    input_kind, hosted_input = resolve_hosted_inputs(args)
 
     outputs: dict[str, dict[str, str]] = {}
-    for index, image_path in enumerate(image_sources, start=1):
-        prediction = model.predict(str(image_path), confidence=int(args.conf * 100))
-        basename = f"{index:04d}_{image_path.stem}" if len(image_sources) > 1 else image_path.stem
-        image_output = run_dir / f"{basename}_pred.jpg"
-        json_output = run_dir / f"{basename}.json"
-        prediction.save(str(image_output))
-        json_output.write_text(json.dumps(to_jsonable(prediction.json()), indent=2), encoding="utf-8")
-        outputs[str(image_path)] = {
-            "image": str(image_output.resolve()),
-            "json": str(json_output.resolve()),
-        }
+    if input_kind == "video":
+        video_path = hosted_input
+        assert isinstance(video_path, Path)
+        outputs[str(video_path)] = run_hosted_video_predict(
+            model=model,
+            video_path=video_path,
+            output_dir=run_dir,
+            confidence=args.conf,
+        )
+    else:
+        image_sources = hosted_input
+        assert isinstance(image_sources, list)
+        for index, image_path in enumerate(image_sources, start=1):
+            prediction = model.predict(str(image_path), confidence=int(args.conf * 100))
+            basename = f"{index:04d}_{image_path.stem}" if len(image_sources) > 1 else image_path.stem
+            image_output = run_dir / f"{basename}_pred.jpg"
+            json_output = run_dir / f"{basename}.json"
+            prediction.save(str(image_output))
+            json_output.write_text(json.dumps(to_jsonable(prediction.json()), indent=2), encoding="utf-8")
+            outputs[str(image_path)] = {
+                "image": str(image_output.resolve()),
+                "json": str(json_output.resolve()),
+            }
 
     manifest_path = save_run_manifest(
         output_root,
@@ -980,7 +1121,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--source",
         help="Image file or directory of images. Defaults to the dataset test split when available.",
     )
-    hosted_parser.add_argument("--video", help="Reserved for parity with local predict; hosted mode is image-only.")
+    hosted_parser.add_argument("--video", help="Optional video file for hosted Roboflow inference.")
     hosted_parser.add_argument("--conf", type=float, default=DEFAULT_CONFIDENCE, help="Prediction confidence threshold.")
     add_download_if_missing_arg(hosted_parser)
     add_roboflow_args(hosted_parser)
