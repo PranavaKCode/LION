@@ -14,7 +14,7 @@ DEFAULT_DATASET_ROOT = Path("datasets")
 DEFAULT_EPOCHS = 75
 DEFAULT_IMAGE_SIZE = 800
 DEFAULT_CONFIDENCE = 0.25
-DEFAULT_ROBOFLOW_KEY_ENV = "ROBOFLOW_API_KEY"
+DEFAULT_ROBOFLOW_KEY_ENV = "rf_n2OhmPIxMOZVj8995pK5u2pkc2p1"
 DATASET_PRESETS: dict[str, dict[str, Any]] = {
     "lionfish": {
         "label": "Lionfish",
