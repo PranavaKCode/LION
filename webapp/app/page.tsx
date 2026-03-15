@@ -2,6 +2,7 @@ import styles from "./page.module.css";
 import { GalleryFrame } from "./components/gallery-frame";
 import { getLionMetrics } from "./lib/lion-data";
 
+
 const architectureSteps = [
   {
     step: "01",
@@ -45,6 +46,7 @@ const mobileAnalyticsBars = [36, 68, 52, 78, 62] as const;
 export default async function Home() {
   const metrics = await getLionMetrics();
   const videoSrc = "/media/lionfish-demo.mp4";
+  const liveDemoGifSrc = "/media/Live_demo.gif";
   const galleryCaptions = [
     `bbox confidence ${metrics.avgConfidence}`,
     `peak ${metrics.maxConfidence}`,
@@ -139,7 +141,7 @@ export default async function Home() {
               <div className={`${styles.consoleChip} ${styles.consoleChipCoral}`}>Live demo</div>
             </div>
             <div className={styles.heroMediaFrame}>
-              <video className={styles.fullVideo} src={videoSrc} autoPlay muted loop playsInline preload="metadata" />
+              <img className={styles.fullVideo} src={liveDemoGifSrc} alt="Live reef monitoring demo" />
               <div className={styles.heroOverlayCards}>
                 <div className={styles.overlayCard}>
                   <span className={styles.statLabel}>Source clip</span>
@@ -220,7 +222,7 @@ export default async function Home() {
               <p className={styles.cardTopline}>Annotated monitor</p>
               <div className={styles.monitorGrid}>
                 <div className={styles.previewPanel}>
-                  <video className={styles.fullVideo} src={videoSrc} autoPlay muted loop playsInline preload="metadata" />
+                  <img className={styles.fullVideo} src={liveDemoGifSrc} alt="Live annotated monitor demo" />
                   <span className={styles.previewTag}>hosted-predict</span>
                 </div>
                 <div className={styles.previewStats}>
