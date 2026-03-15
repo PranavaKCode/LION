@@ -1,6 +1,9 @@
+import type { CSSProperties } from "react";
+import Image from "next/image";
 import styles from "./page.module.css";
-import { GalleryFrame } from "./components/gallery-frame";
 import { LiveLab } from "./components/live-lab";
+import { UnderseaNetwork } from "./components/undersea-network";
+import { DETECTOR_OPTIONS, REEF_GALLERY_SPECIES, type GallerySpeciesCard } from "./lib/detector-config";
 import { getLionMetrics } from "./lib/lion-data";
 import { SpeciesMapClient } from "./components/species-map-client";
 
@@ -17,18 +20,18 @@ const architectureSteps = [
   },
   {
     step: "03",
-    title: "Bounding boxes + confidence",
-    description: "Detections are overlaid with class labels and confidence values for reef review.",
+    title: "Hosted or service inference",
+    description: "Hosted Roboflow lanes stay deployment-friendly, while the paired reef-health suite can run through a remote Python service or a local fallback.",
   },
   {
     step: "04",
-    title: "Browser review surface",
-    description: "The deployed app layers returned detections over uploaded media without writing files to serverless disk.",
+    title: "Active preview feed",
+    description: "The web app overlays detections in-browser so analysts can review clips without waiting for a dashboard export.",
   },
   {
     step: "05",
-    title: "JSON manifests + metrics",
-    description: "Frame-level metadata can still feed audits, statistics, and downstream analysis.",
+    title: "Manifest + scoring hooks",
+    description: "Run manifests, JSON payloads, and future evaluation exports stay ready for confusion matrices and reef-health analysis.",
   },
 ] as const;
 
@@ -107,7 +110,7 @@ export default async function Home() {
             <div className={styles.brandBadge}>L</div>
             <div>
               <div className={styles.brandName}>L.I.O.N.</div>
-              <div className={styles.brandSubtitle}>REAL-TIME 24/7 WORLDWIDE DETECTION</div>
+              <div className={styles.brandSubtitle}>REEF HEALTH + INVASIVE SPECIES</div>
             </div>
           </div>
           <nav className={styles.navLinks} aria-label="Primary">
@@ -125,13 +128,15 @@ export default async function Home() {
 
         <section className={styles.heroSection}>
           <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}>Undersea detection control surface</p>
+            <p className={styles.eyebrow}>Undersea reef-health control room</p>
             <h1 className={styles.heroTitle}>
-              Detect invasive species
-              <span className={styles.heroAccent}>before they damage ecosystems.</span>
+              Track reef health, invasive outbreaks, and indicator species
+              <span className={styles.heroAccent}>from one living marine dashboard.</span>
             </h1>
             <p className={styles.heroText}>
-             
+              L.I.O.N. now routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
+              crown-of-thorns watch, and a marine-detect-style Reef Health Suite that can run through a remote Python
+              service or a local fallback using your FishInv and MegaFauna models.
             </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#live-lab">
@@ -143,20 +148,20 @@ export default async function Home() {
             </div>
             <div className={styles.statsGrid}>
               <div className={styles.statCard}>
-                <span className={styles.statLabel}>Hosted model</span>
-                <strong className={styles.statValue}>{metrics.hostedModel}</strong>
+                <span className={styles.statLabel}>Reference run</span>
+                <strong className={styles.statValue}>{metrics.hostedModelShort}</strong>
               </div>
               <div className={styles.statCard}>
-                <span className={styles.statLabel}>Frames processed</span>
+                <span className={styles.statLabel}>Reference frames</span>
                 <strong className={styles.statValue}>{metrics.frameCount}</strong>
               </div>
               <div className={styles.statCard}>
-                <span className={styles.statLabel}>Avg confidence</span>
-                <strong className={styles.statValue}>{metrics.avgConfidence}</strong>
+                <span className={styles.statLabel}>Detector lanes</span>
+                <strong className={styles.statValue}>{String(DETECTOR_OPTIONS.length)}</strong>
               </div>
               <div className={styles.statCard}>
-                <span className={styles.statLabel}>Output mode</span>
-                <strong className={styles.statValue}>{metrics.outputMode}</strong>
+                <span className={styles.statLabel}>Species slots</span>
+                <strong className={styles.statValue}>{String(REEF_GALLERY_SPECIES.length)}</strong>
               </div>
             </div>
           </div>
@@ -168,15 +173,22 @@ export default async function Home() {
                 <span />
                 <span />
               </div>
-              <div className={styles.consoleTitle}>Reef Watch / Active annotated feed</div>
-              <div className={`${styles.consoleChip} ${styles.consoleChipCoral}`}>Live demo</div>
+              <div className={styles.consoleTitle}>Reef Watch / active preview feed</div>
+              <div className={`${styles.consoleChip} ${styles.consoleChipCoral}`}>Undersea HUD</div>
             </div>
             <div className={styles.heroMediaFrame}>
-              <img className={styles.fullVideo} src={liveDemoGifSrc} alt="Live reef monitoring demo" />
+              <Image
+                fill
+                unoptimized
+                className={styles.fullVideo}
+                src={liveDemoGifSrc}
+                alt="Active reef monitoring feed"
+                sizes="(max-width: 980px) 100vw, 56vw"
+              />
               <div className={styles.heroOverlayCards}>
                 <div className={styles.overlayCard}>
-                  <span className={styles.statLabel}>Source clip</span>
-                  <strong className={styles.statValue}>{metrics.sourceName}</strong>
+                  <span className={styles.statLabel}>Detection lanes</span>
+                  <strong className={styles.statValue}>{detectorLaneLabels}</strong>
                 </div>
                 <div className={styles.overlayCard}>
                   <span className={styles.statLabel}>Peak confidence</span>
@@ -185,7 +197,9 @@ export default async function Home() {
                 <div className={`${styles.overlayCard} ${styles.overlayCardAccent}`}>
                   <span className={styles.statLabel}>Runtime</span>
                   <strong className={styles.statValue}>{"8.3s"}</strong>
+                  
                 </div>
+                
               </div>
             </div>
             <div className={styles.consoleFooter}>
@@ -204,9 +218,9 @@ export default async function Home() {
             <p className={styles.eyebrow}>Program architecture</p>
             <h2>From raw reef footage to decision-ready overlays.</h2>
             <p>
-              {/* The Workflow prepare a secure upload, run Roboflow
-              inference, render browser overlays, and keep structured detection JSON ready for review and downstream
-              analysis. */}
+              The flow now supports narrow invasive-species watches and a broader reef-health sweep. Hosted lanes stay
+              deployment-friendly, while the paired Reef Health Suite opens a remote-service path for FishInv and
+              MegaFauna without pretending those models belong inside a serverless bundle.
             </p>
           </div>
           <div className={styles.pipelineRow}>
@@ -228,11 +242,11 @@ export default async function Home() {
         <section className={styles.sectionBlock} id="live-lab">
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Live lab</p>
-            <h2>A web-app-first upload and review zone.</h2>
+            <h2>Choose the detector lane that matches the mission.</h2>
             <p>
-              The upload area now behaves like a deployed tool, not a mock. It previews local media immediately, sends
-              images through hosted inference, and uploads videos to a real remote detection job that comes back as
-              browser overlays.
+              The Live Lab now works more like an operations surface. Pick a hosted invasive-species detector for
+              deployment-safe uploads, or switch into the Reef Health Suite and run FishInv and MegaFauna through a
+              remote marine-detect service when one is configured.
             </p>
           </div>
 
@@ -262,12 +276,11 @@ export default async function Home() {
                     <p>{card.subtitle}</p>
                     <p>{card.summary}</p>
                   </div>
+                  <p className={styles.galleryDescription}>{card.highlight}</p>
                   <div className={styles.galleryTags}>
-                    {card.tags.map((tag) => (
-                      <span key={`${card.title}-${tag}`} className={styles.fileChip}>
-                        {tag}
-                      </span>
-                    ))}
+                    <span className={styles.fileChip}>{card.badge}</span>
+                    <span className={styles.fileChip}>{card.imageSrc ? "reference asset" : "preview / N/A"}</span>
+                    <span className={styles.fileChip}>{card.imageSrc ? "gallery image" : "detector ready"}</span>
                   </div>
                 </div>
               </article>
@@ -291,10 +304,10 @@ export default async function Home() {
         <section className={`${styles.sectionBlock} ${styles.analyticsSection}`} id="analytics">
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Analysis + stats</p>
-            <h2>Powerful layout, explicit placeholders.</h2>
+            <h2>Ready for reef-health scoring, still honest about placeholders.</h2>
             <p>
-              These modules no longer fake evaluation numbers. Until scored validation outputs are connected, each card
-              stays clearly labeled as a placeholder with N/A values.
+              The analytics surface is laid out for confusion matrices, precision-recall curves, and sensitivity views,
+              but it only shows N/A until real validation exports exist for each species lane.
             </p>
           </div>
 
@@ -307,14 +320,14 @@ export default async function Home() {
                 <div className={`${styles.matrixCell} ${styles.matrixCold}`}>N/A</div>
                 <div className={`${styles.matrixCell} ${styles.matrixCold}`}>N/A</div>
               </div>
-              <p className={styles.analyticsCaption}>Placeholder until evaluation exports are connected.</p>
+              <p className={styles.analyticsCaption}>Placeholder until labeled validation exports are connected.</p>
             </article>
 
             <article className={`${styles.card} ${styles.analyticsCard}`}>
               <p className={styles.cardTopline}>Precision / recall</p>
               <div className={styles.placeholderSurface}>
                 <strong className={styles.placeholderTitle}>N/A</strong>
-                <p className={styles.placeholderCopy}>Precision-recall data is not wired into the homepage yet.</p>
+                <p className={styles.placeholderCopy}>Precision-recall curves will populate once class scoring is wired.</p>
               </div>
               <div className={styles.metricPairRow}>
                 <div className={styles.miniMetricCompact}>
@@ -346,20 +359,20 @@ export default async function Home() {
               <p className={styles.cardTopline}>Run summary</p>
               <div className={styles.summaryGrid}>
                 <div className={styles.miniMetricCompact}>
-                  <span>Source</span>
+                  <span>Reference source</span>
                   <strong>{metrics.sourceName}</strong>
                 </div>
                 <div className={styles.miniMetricCompact}>
-                  <span>Output mode</span>
-                  <strong>{metrics.outputMode}</strong>
+                  <span>Reference model</span>
+                  <strong>{metrics.hostedModelShort}</strong>
                 </div>
                 <div className={styles.miniMetricCompact}>
                   <span>Manifest</span>
                   <strong>{metrics.manifestPath}</strong>
                 </div>
                 <div className={styles.miniMetricCompact}>
-                  <span>Model</span>
-                  <strong>{metrics.hostedModelShort}</strong>
+                  <span>Remote suite</span>
+                  <strong>{localSuiteLabel}</strong>
                 </div>
               </div>
             </article>
@@ -394,15 +407,15 @@ export default async function Home() {
           <div className={styles.footerGrid}>
             <div className={`${styles.card} ${styles.footerCard}`}>
               <h3>Project</h3>
-              <p>Hosted lionfish detection for images and video with browser overlays and structured outputs.</p>
+              <p>Hosted lionfish and crown-of-thorns detection plus a remote-capable paired suite for Indo-Pacific reef indicators.</p>
             </div>
             <div className={`${styles.card} ${styles.footerCard}`}>
-              <h3>Outputs</h3>
+              <h3>Reference output</h3>
               <p>{metrics.outputVideoName}</p>
             </div>
             <div className={`${styles.card} ${styles.footerCard}`}>
-              <h3>Reference cues</h3>
-              <p>Keep the Mantis card rhythm. Avoid the old flat white prototype.</p>
+              <h3>Next scoring layer</h3>
+              <p>Wire real evaluation exports into confusion matrices, precision-recall curves, and ecosystem trend views.</p>
             </div>
           </div>
         </footer>
@@ -410,30 +423,30 @@ export default async function Home() {
 
       <div className={styles.mobileDock}>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
-          <span>Source</span>
-          <strong>{metrics.sourceName}</strong>
+          <span>Detectors</span>
+          <strong>{String(DETECTOR_OPTIONS.length)}</strong>
         </div>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
-          <span>Output</span>
-          <strong>{metrics.outputMode}</strong>
+          <span>Species slots</span>
+          <strong>{String(REEF_GALLERY_SPECIES.length)}</strong>
         </div>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
-          <span>FPS</span>
-          <strong>{metrics.fps}</strong>
+          <span>Reference run</span>
+          <strong>{metrics.hostedModelShort}</strong>
         </div>
       </div>
 
       <section className={styles.mobileOnlySummary}>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
-          <p className={styles.cardTopline}>Gallery</p>
-          <GalleryFrame label="reef archive" seconds={3.6} videoSrc={videoSrc} width={320} height={180} compact />
-          <p className={styles.mobileCaption}>{`Source ${metrics.sourceName}`}</p>
+          <p className={styles.cardTopline}>Species slot</p>
+          {renderSpeciesMedia(mobileSpecies, 0)}
+          <p className={styles.mobileCaption}>{mobileSpecies.highlight}</p>
         </article>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
           <p className={styles.cardTopline}>Analytics</p>
           <div className={styles.placeholderSurface}>
             <strong className={styles.placeholderTitle}>N/A</strong>
-            <p className={styles.placeholderCopy}>Evaluation metrics will appear here once scoring data is connected.</p>
+            <p className={styles.placeholderCopy}>Validation exports will appear here once species scoring is connected.</p>
           </div>
           <div className={styles.metricPairRow}>
             <div className={styles.miniMetricCompact}>
