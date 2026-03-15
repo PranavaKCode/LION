@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from "next/server";
 import type {
   LiveLabApiResponse,
   LiveLabCompleteResponse,
-  LiveLabPreparedUploadResponse,
   LiveLabPrediction,
   LiveLabQueuedResponse,
   LiveLabResult,
@@ -16,6 +15,7 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_CONFIDENCE = 0.25;
 const MAX_IMAGE_UPLOAD_BYTES = 40 * 1024 * 1024;
+const MAX_SERVER_PROXY_VIDEO_BYTES = 4 * 1024 * 1024;
 const ROBOFLOW_DETECT_URL = "https://detect.roboflow.com";
 const ROBOFLOW_API_URL = "https://api.roboflow.com";
 const DEFAULT_MODEL_WORKSPACE = "su-eaelw";
@@ -72,16 +72,20 @@ type RoboflowVideoOutputPayload = {
   [key: string]: unknown;
 };
 
-type PrepareVideoUploadRequest = {
-  intent?: string;
-  fileName?: string;
-};
-
 type StartVideoJobRequest = {
   intent?: string;
   inputUrl?: string;
   sourceName?: string;
 };
+
+function isServerlessHost() {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.AWS_EXECUTION_ENV ||
+      process.env.LAMBDA_TASK_ROOT,
+  );
+}
 
 function parseEnvFile(raw: string) {
   const values: Record<string, string> = {};
@@ -180,7 +184,7 @@ async function resolveServerConfig(): Promise<ServerConfig> {
     try {
       Object.assign(envFromFiles, parseEnvFile(await readFile(envFile, "utf8")));
     } catch {
-      // Ignore missing local env files and continue with other sources.
+      // Ignore missing env files and continue with other sources.
     }
   }
 
@@ -317,7 +321,7 @@ function buildVideoResult(options: {
   };
 }
 
-async function requestVideoUploadUrl(fileName: string, config: ServerConfig): Promise<LiveLabPreparedUploadResponse> {
+async function requestVideoUploadUrl(fileName: string, config: ServerConfig) {
   const signedUrlPayload = await fetchJson<{ signed_url: string }>(
     `${ROBOFLOW_API_URL}/video_upload_signed_url?api_key=${encodeURIComponent(config.apiKey!)}`,
     {
@@ -328,14 +332,24 @@ async function requestVideoUploadUrl(fileName: string, config: ServerConfig): Pr
     "Error requesting Roboflow video upload URL",
   );
 
-  return {
-    status: "upload-ready",
-    uploadUrl: signedUrlPayload.signed_url,
-    annotatedKind: "video",
-    model: buildModelDisplay(config),
-    sourceName: fileName,
-    message: "Secure upload URL ready. Upload the video directly to Roboflow storage.",
-  };
+  return signedUrlPayload.signed_url;
+}
+
+async function uploadVideoFileToRoboflow(file: File, config: ServerConfig) {
+  const signedUrl = await requestVideoUploadUrl(file.name || "uploaded-video.mp4", config);
+  const uploadResponse = await fetch(signedUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: Buffer.from(await file.arrayBuffer()),
+    cache: "no-store",
+  });
+
+  if (!uploadResponse.ok) {
+    const details = await uploadResponse.text();
+    throw new Error(`Error uploading video to Roboflow: ${details || uploadResponse.statusText}`);
+  }
+
+  return signedUrl;
 }
 
 async function startVideoJob(options: {
@@ -481,25 +495,20 @@ export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") || "";
 
   if (contentType.includes("application/json")) {
-    const body = (await request.json()) as PrepareVideoUploadRequest | StartVideoJobRequest;
+    const body = (await request.json()) as StartVideoJobRequest;
+
+    if (body.intent !== "start-video-job") {
+      return NextResponse.json({ error: "Unsupported Live Lab request intent." }, { status: 400 });
+    }
+
+    const inputUrl = body.inputUrl?.trim();
+    if (!inputUrl) {
+      return NextResponse.json({ error: "A public upload URL is required to start video inference." }, { status: 400 });
+    }
 
     try {
-      if (body.intent === "prepare-video-upload") {
-        const fileName = sanitizeSourceName((body as PrepareVideoUploadRequest).fileName, "uploaded-video.mp4");
-        return NextResponse.json(await requestVideoUploadUrl(fileName, config));
-      }
-
-      if (body.intent === "start-video-job") {
-        const inputUrl = (body as StartVideoJobRequest).inputUrl?.trim();
-        if (!inputUrl) {
-          return NextResponse.json({ error: "A Roboflow upload URL is required to start video inference." }, { status: 400 });
-        }
-
-        const sourceName = sanitizeSourceName((body as StartVideoJobRequest).sourceName, "uploaded-video.mp4");
-        return NextResponse.json(await startVideoJob({ config, inputUrl, sourceName }));
-      }
-
-      return NextResponse.json({ error: "Unsupported Live Lab request intent." }, { status: 400 });
+      const sourceName = sanitizeSourceName(body.sourceName, "uploaded-video.mp4");
+      return NextResponse.json(await startVideoJob({ config, inputUrl, sourceName }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Live Lab video setup failed.";
       return NextResponse.json({ error: message }, { status: 500 });
@@ -521,57 +530,74 @@ export async function POST(request: Request) {
     );
   }
 
-  if (file.type.startsWith("video/")) {
-    return NextResponse.json(
-      {
-        error: "Video uploads now use a direct browser-to-Roboflow transfer. Refresh the page and try the upload again.",
-      },
-      { status: 400 },
-    );
+  if (file.type.startsWith("image/")) {
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { error: "The uploaded image is too large for the live lab. Keep image uploads under 40 MB." },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const params = new URLSearchParams({
+        api_key: config.apiKey,
+        name: file.name || "upload-image.jpg",
+        overlap: "30",
+        confidence: String(Math.round(confidence * 100)),
+        stroke: "1",
+        labels: "false",
+        format: "json",
+      });
+
+      const imagePayload = await fetchJson<RoboflowImagePayload>(
+        `${ROBOFLOW_DETECT_URL}/${config.modelProject}/${config.modelVersion}?${params.toString()}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: Buffer.from(await file.arrayBuffer()).toString("base64"),
+        },
+        "Error running Roboflow image inference",
+      );
+
+      const response: LiveLabCompleteResponse = {
+        status: "complete",
+        message: "Remote image detection complete.",
+        result: buildImageResult({
+          config,
+          payload: imagePayload,
+          confidence,
+          sourceName: sanitizeSourceName(file.name, "uploaded-image.jpg"),
+        }),
+      };
+
+      return NextResponse.json(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Live Lab image inference failed.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 
-  if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+  if (isServerlessHost() && file.size > MAX_SERVER_PROXY_VIDEO_BYTES) {
     return NextResponse.json(
-      { error: "The uploaded image is too large for the live lab. Keep image uploads under 40 MB." },
+      {
+        error:
+          "This deployment cannot proxy videos over 4 MB through a serverless function. Configure Vercel Blob with BLOB_READ_WRITE_TOKEN for large deployed uploads, or run the app locally for direct proxy uploads.",
+      },
       { status: 400 },
     );
   }
 
   try {
-    const params = new URLSearchParams({
-      api_key: config.apiKey,
-      name: file.name || "upload-image.jpg",
-      overlap: "30",
-      confidence: String(Math.round(confidence * 100)),
-      stroke: "1",
-      labels: "false",
-      format: "json",
-    });
-
-    const imagePayload = await fetchJson<RoboflowImagePayload>(
-      `${ROBOFLOW_DETECT_URL}/${config.modelProject}/${config.modelVersion}?${params.toString()}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: Buffer.from(await file.arrayBuffer()).toString("base64"),
-      },
-      "Error running Roboflow image inference",
-    );
-
-    const response: LiveLabCompleteResponse = {
-      status: "complete",
-      message: "Remote image detection complete.",
-      result: buildImageResult({
+    const inputUrl = await uploadVideoFileToRoboflow(file, config);
+    return NextResponse.json(
+      await startVideoJob({
         config,
-        payload: imagePayload,
-        confidence,
-        sourceName: sanitizeSourceName(file.name, "uploaded-image.jpg"),
+        inputUrl,
+        sourceName: sanitizeSourceName(file.name, "uploaded-video.mp4"),
       }),
-    };
-
-    return NextResponse.json(response);
+    );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Live Lab inference failed.";
+    const message = error instanceof Error ? error.message : "Live Lab video inference failed.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -48,15 +48,6 @@ export type LiveLabResult = {
   overlay: LiveLabOverlay | null;
 };
 
-export type LiveLabPreparedUploadResponse = {
-  status: "upload-ready";
-  uploadUrl: string;
-  annotatedKind: "video";
-  model: string;
-  sourceName: string;
-  message: string;
-};
-
 export type LiveLabQueuedResponse = {
   status: "queued" | "processing";
   jobId: string;
@@ -73,7 +64,4 @@ export type LiveLabCompleteResponse = {
   result: LiveLabResult;
 };
 
-export type LiveLabApiResponse =
-  | LiveLabPreparedUploadResponse
-  | LiveLabQueuedResponse
-  | LiveLabCompleteResponse;
+export type LiveLabApiResponse = LiveLabQueuedResponse | LiveLabCompleteResponse;

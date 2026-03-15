@@ -1,5 +1,6 @@
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "../page.module.css";
@@ -30,6 +31,8 @@ type PanelSize = {
   height: number;
 };
 
+const SERVER_PROXY_VIDEO_LIMIT_BYTES = 4 * 1024 * 1024;
+
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return "N/A";
@@ -40,6 +43,14 @@ function formatBytes(bytes: number) {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isLocalOrigin() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 }
 
 function getContainMetrics(panel: PanelSize, overlay: LiveLabOverlay | null) {
@@ -90,19 +101,63 @@ function getOverlayPredictions(overlay: LiveLabOverlay | null, currentTime: numb
   return getActiveVideoFrame(overlay.frames, currentTime, overlay.sampleFps)?.predictions ?? [];
 }
 
-async function uploadVideoToRoboflow(file: File, uploadUrl: string) {
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-    },
-    body: file,
+function normalizeFetchError(error: unknown) {
+  if (error instanceof Error && error.message === "Failed to fetch") {
+    return "The upload request could not reach the remote storage service. Large deployed videos need Vercel Blob configured, while local runs should use the built-in proxy upload path.";
+  }
+
+  return error instanceof Error ? error.message : "Detection failed.";
+}
+
+async function parseResponse(response: Response) {
+  const payload = (await response.json()) as LiveLabApiResponse & { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error || "Detection failed.");
+  }
+  return payload;
+}
+
+async function runServerUpload(file: File, confidence: number) {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("confidence", confidence.toFixed(2));
+
+  const response = await fetch("/api/live-lab/detect", {
+    method: "POST",
+    body: formData,
   });
 
-  if (!response.ok) {
-    const details = await response.text().catch(() => "");
-    throw new Error(details || "Video upload to Roboflow failed.");
-  }
+  return parseResponse(response);
+}
+
+async function uploadVideoToBlob(file: File) {
+  const pathname = `live-lab/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  return upload(pathname, file, {
+    access: "public",
+    handleUploadUrl: "/api/live-lab/upload",
+    contentType: file.type || "application/octet-stream",
+    multipart: file.size >= 5 * 1024 * 1024,
+  });
+}
+
+async function startRemoteVideoJob(inputUrl: string, sourceName: string) {
+  const response = await fetch("/api/live-lab/detect", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      intent: "start-video-job",
+      inputUrl,
+      sourceName,
+    }),
+  });
+
+  return parseResponse(response);
+}
+
+function shouldUseServerProxy(file: File) {
+  return isLocalOrigin() || file.size <= SERVER_PROXY_VIDEO_LIMIT_BYTES;
 }
 
 export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
@@ -177,10 +232,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         const response = await fetch(`/api/live-lab/detect?${params.toString()}`, {
           cache: "no-store",
         });
-        const payload = (await response.json()) as LiveLabApiResponse & { error?: string };
-        if (!response.ok) {
-          throw new Error(payload.error || "Detection polling failed.");
-        }
+        const payload = await parseResponse(response);
 
         if (payload.status === "complete") {
           setResult(payload.result);
@@ -190,17 +242,13 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
           return;
         }
 
-        if (payload.status !== "queued" && payload.status !== "processing") {
-          throw new Error("Unexpected polling response from Live Lab.");
-        }
-
         setJobState({
           jobId: payload.jobId,
           pollAfterMs: payload.pollAfterMs,
           message: payload.message,
         });
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : "Detection polling failed.");
+        setErrorMessage(normalizeFetchError(error));
         setJobState(null);
         setProgressMessage(null);
         setIsRunning(false);
@@ -287,88 +335,43 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     setJobState(null);
 
     try {
+      let payload: LiveLabApiResponse;
+
       if (selectedFile.type.startsWith("video/")) {
-        setProgressMessage("Requesting secure Roboflow upload URL...");
-
-        const prepareResponse = await fetch("/api/live-lab/detect", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            intent: "prepare-video-upload",
-            fileName: selectedFile.name,
-          }),
-        });
-
-        const preparePayload = (await prepareResponse.json()) as LiveLabApiResponse & { error?: string };
-        if (!prepareResponse.ok) {
-          throw new Error(preparePayload.error || "Could not prepare the video upload.");
+        if (shouldUseServerProxy(selectedFile)) {
+          setProgressMessage(
+            isLocalOrigin()
+              ? "Uploading video through the local Live Lab server..."
+              : "Uploading small video through the deployed Live Lab server...",
+          );
+          payload = await runServerUpload(selectedFile, confidence);
+        } else {
+          setProgressMessage("Uploading large video to Vercel Blob...");
+          const blob = await uploadVideoToBlob(selectedFile);
+          setProgressMessage("Starting remote video inference...");
+          payload = await startRemoteVideoJob(blob.url, selectedFile.name);
         }
+      } else {
+        setProgressMessage("Sending image to hosted detector...");
+        payload = await runServerUpload(selectedFile, confidence);
+      }
 
-        if (preparePayload.status !== "upload-ready") {
-          throw new Error("Unexpected upload preparation response from Live Lab.");
-        }
-
-        setProgressMessage("Uploading video directly to Roboflow storage...");
-        await uploadVideoToRoboflow(selectedFile, preparePayload.uploadUrl);
-
-        setProgressMessage("Starting remote video inference...");
-        const startResponse = await fetch("/api/live-lab/detect", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            intent: "start-video-job",
-            inputUrl: preparePayload.uploadUrl,
-            sourceName: selectedFile.name,
-          }),
-        });
-
-        const startPayload = (await startResponse.json()) as LiveLabApiResponse & { error?: string };
-        if (!startResponse.ok) {
-          throw new Error(startPayload.error || "Could not start remote video inference.");
-        }
-
-        if (startPayload.status !== "queued" && startPayload.status !== "processing") {
-          throw new Error("Unexpected video job response from Live Lab.");
-        }
-
-        setJobState({
-          jobId: startPayload.jobId,
-          pollAfterMs: startPayload.pollAfterMs,
-          message: startPayload.message,
-        });
+      if (payload.status === "complete") {
+        setResult(payload.result);
         setProgressMessage(null);
         setIsRunning(false);
         return;
       }
 
-      setProgressMessage("Sending image to hosted detector...");
-      const formData = new FormData();
-      formData.set("file", selectedFile);
-      formData.set("confidence", confidence.toFixed(2));
-
-      const response = await fetch("/api/live-lab/detect", {
-        method: "POST",
-        body: formData,
+      setJobState({
+        jobId: payload.jobId,
+        pollAfterMs: payload.pollAfterMs,
+        message: payload.message,
       });
-
-      const payload = (await response.json()) as LiveLabApiResponse & { error?: string };
-      if (!response.ok) {
-        throw new Error(payload.error || "Detection failed.");
-      }
-
-      if (payload.status !== "complete") {
-        throw new Error("Unexpected image detection response from Live Lab.");
-      }
-
-      setResult(payload.result);
       setProgressMessage(null);
       setIsRunning(false);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Detection failed.");
+      setErrorMessage(normalizeFetchError(error));
       setProgressMessage(null);
       setIsRunning(false);
     }
@@ -428,8 +431,8 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <p className={styles.cardTopline}>Upload dock</p>
         <h3>Choose a reef clip or still image and run hosted detection.</h3>
         <p>
-          Images are sent to Roboflow through the server route. Videos now upload straight from the browser to a secure
-          Roboflow URL, then the page polls the remote job and renders frame overlays locally.
+          Images go through the Live Lab server route directly. Videos use the local server proxy during development,
+          while larger deployed uploads can stage in Vercel Blob before the remote Roboflow job starts.
         </p>
         <input
           ref={inputRef}
@@ -615,8 +618,8 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <article className={`${styles.card} ${styles.opsCard}`}>
           <p className={styles.cardTopline}>Current page state</p>
           <ul className={styles.noteList}>
-            <li>Images use hosted inference through the server route, while videos upload directly from the browser to Roboflow storage.</li>
-            <li>Video jobs run remotely and are polled asynchronously so deployed uploads can finish without local Python or writable server disk.</li>
+            <li>Images use hosted inference through the server route, while local videos can proxy through the same route without Python.</li>
+            <li>Large deployed videos should stage in Vercel Blob first so they avoid browser CORS issues and serverless body limits.</li>
             <li>The browser renders returned detections over the selected media without pretending an annotated video file was written on the host.</li>
           </ul>
         </article>
@@ -624,4 +627,3 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     </div>
   );
 }
-
