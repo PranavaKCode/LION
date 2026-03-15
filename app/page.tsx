@@ -6,13 +6,13 @@ import { getLionMetrics } from "./lib/lion-data";
 const architectureSteps = [
   {
     step: "01",
-    title: "Image / video ingest",
-    description: "Single image, image directory, or MP4 source from field monitoring.",
+    title: "Image / video intake",
+    description: "On A Boat, streaming live from a reef, or in the lab with pre-recorded footage. Drop it in. ",
   },
   {
     step: "02",
     title: "Hosted Roboflow detector",
-    description: "Preset lionfish model resolves workspace, project, and version automatically.",
+    description: "A call is made to our hosted AI model, so each invasive species is detected.",
   },
   {
     step: "03",
@@ -164,9 +164,9 @@ export default async function Home() {
             <p className={styles.eyebrow}>Program architecture</p>
             <h2>From raw reef footage to decision-ready overlays.</h2>
             <p>
-              This mirrors the real hosted workflow in the deployed app: prepare a secure upload, run Roboflow
+              {/* The Workflow prepare a secure upload, run Roboflow
               inference, render browser overlays, and keep structured detection JSON ready for review and downstream
-              analysis.
+              analysis. */}
             </p>
           </div>
           <div className={styles.pipelineRow}>
@@ -177,7 +177,9 @@ export default async function Home() {
                   <h3>{item.title}</h3>
                   <p>{item.description}</p>
                 </article>
-                {index < architectureSteps.length - 1 ? <div className={styles.pipelineArrow}>-&gt;</div> : null}
+                {index < architectureSteps.length - 1 ? (
+                  <div className={styles.pipelineArrow}>{">" }</div>
+                ) : null}
               </div>
             ))}
           </div>

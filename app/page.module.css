@@ -447,20 +447,21 @@
 
 .pipelineRow {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.875rem;
   margin-top: 1.75rem;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
 }
 
 .pipelineItemWrap {
   display: flex;
   align-items: stretch;
   gap: 0.875rem;
+  flex: 1 1 240px;
 }
 
 .pipelineCard {
-  width: 240px;
+  width: 100%;
+  min-width: 0;
   padding: 1.125rem;
   background: rgba(255, 255, 255, 0.86);
 }
@@ -1125,6 +1126,10 @@
   .previewStats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .pipelineArrow {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1163,7 +1168,6 @@
 
   .pipelineRow {
     flex-direction: column;
-    overflow: visible;
   }
 
   .pipelineItemWrap {
