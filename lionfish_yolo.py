@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -9,6 +9,7 @@ from typing import Any
 
 
 DEFAULT_OUTPUT_ROOT = Path("runs") / "lionfish"
+DEFAULT_LOCAL_OUTPUT_ROOT = Path("runs") / "reef-health"
 DEFAULT_CONFIDENCE = 0.25
 DEFAULT_FONT_SCALE = 0.55
 DEFAULT_LABEL_STROKE = 2
@@ -21,6 +22,12 @@ MODEL_PRESETS: dict[str, dict[str, Any]] = {
         "rf_model_workspace": "su-eaelw",
         "rf_model_project": "lionfish-qs3tq",
         "rf_model_version": 49,
+    },
+    "crown-of-thorns": {
+        "label": "Hosted Roboflow crown-of-thorns detector",
+        "rf_model_workspace": "roboflow",
+        "rf_model_project": "crown-of-thorns-detection-pgppy",
+        "rf_model_version": 1,
     },
 }
 
@@ -47,6 +54,16 @@ def require_cv2():
             "OpenCV is not installed. Use Python 3.10-3.12 and run `py -3.11 -m pip install -e .` first."
         ) from exc
     return cv2
+
+
+def require_ultralytics():
+    try:
+        from ultralytics import YOLO
+    except ImportError as exc:
+        raise CliError(
+            "Ultralytics is not installed. Use Python 3.10-3.12 and run `py -3.11 -m pip install -e .` first."
+        ) from exc
+    return YOLO
 
 
 def resolve_path(value: str | Path) -> Path:
@@ -143,7 +160,7 @@ def collect_image_inputs(source: Path) -> list[Path]:
         if suffix in VIDEO_SUFFIXES:
             raise CliError("This source is a video file. Use --video or pass the file via --source by itself.")
         if suffix not in IMAGE_SUFFIXES:
-            raise CliError(f"Unsupported image type for hosted inference: {source}")
+            raise CliError(f"Unsupported image type for inference: {source}")
         return [source]
 
     image_paths = sorted(path for path in source.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES)
@@ -188,7 +205,7 @@ def resolve_hosted_model_spec(args: argparse.Namespace) -> tuple[str, str, int]:
 
     if not workspace or not project or version is None:
         raise CliError(
-            "A hosted Roboflow model could not be inferred. Pass --rf-model-id or use --preset lionfish."
+            "A hosted Roboflow model could not be inferred. Pass --rf-model-id or use a matching --preset."
         )
 
     try:
@@ -227,7 +244,7 @@ def format_confidence_label(confidence: Any) -> str:
     return f"{value:.0f}%"
 
 
-def draw_hosted_detections(frame, predictions: list[dict[str, Any]], stroke: int, font_scale: float):
+def draw_detections(frame, predictions: list[dict[str, Any]], stroke: int, font_scale: float):
     cv2 = require_cv2()
 
     annotated = frame.copy()
@@ -348,11 +365,17 @@ def run_hosted_video_predict(
             prediction = model.predict(frame, confidence=int(confidence * 100))
             prediction_json = normalize_prediction_payload(prediction.json())
             predictions = prediction_json.get("predictions", []) if isinstance(prediction_json, dict) else []
-            annotated = draw_hosted_detections(frame, predictions, stroke=stroke, font_scale=font_scale)
+            annotated = draw_detections(frame, predictions, stroke=stroke, font_scale=font_scale)
             writer.write(annotated)
 
             if save_json_outputs:
-                frame_results.append({"frame": frame_index, "predictions": predictions})
+                frame_results.append(
+                    {
+                        "frame": frame_index,
+                        "time": frame_index / fps if fps else frame_index,
+                        "predictions": predictions,
+                    }
+                )
 
             if frame_index % 25 == 0:
                 print(f"Processed {frame_index} frames...")
@@ -372,6 +395,198 @@ def run_hosted_video_predict(
                 "height": height,
                 "frame_count": frame_index,
                 "frames": frame_results,
+            },
+        )
+        outputs["json"] = str(json_output.resolve())
+
+    return outputs
+
+
+def resolve_local_model_inputs(args: argparse.Namespace) -> list[tuple[str, Path]]:
+    if not args.model_path:
+        raise CliError("Pass at least one --model-path for local YOLO inference.")
+
+    labels = args.model_label or []
+    resolved: list[tuple[str, Path]] = []
+    for index, raw_path in enumerate(args.model_path):
+        model_path = ensure_exists(resolve_path(raw_path), "Local model")
+        label = labels[index] if index < len(labels) else model_path.stem
+        resolved.append((label, model_path))
+
+    return resolved
+
+
+def load_local_models(args: argparse.Namespace):
+    YOLO = require_ultralytics()
+    models = []
+    for label, model_path in resolve_local_model_inputs(args):
+        models.append({"label": label, "path": model_path, "model": YOLO(str(model_path))})
+    return models
+
+
+def extract_local_predictions(result: Any, model_label: str) -> list[dict[str, Any]]:
+    boxes = getattr(result, "boxes", None)
+    if boxes is None:
+        return []
+
+    names = getattr(result, "names", {})
+    predictions: list[dict[str, Any]] = []
+    for box in boxes:
+        xywh = box.xywh[0].tolist()
+        confidence = float(box.conf[0].item())
+        class_index = int(box.cls[0].item())
+        if isinstance(names, dict):
+            class_name = names.get(class_index, str(class_index))
+        else:
+            class_name = names[class_index]
+        predictions.append(
+            {
+                "x": float(xywh[0]),
+                "y": float(xywh[1]),
+                "width": float(xywh[2]),
+                "height": float(xywh[3]),
+                "confidence": confidence,
+                "class": str(class_name),
+                "model": model_label,
+            }
+        )
+    return predictions
+
+
+def predict_local_on_image(models: list[dict[str, Any]], image_path: Path, confidence: float) -> tuple[Any, list[dict[str, Any]]]:
+    cv2 = require_cv2()
+    frame = cv2.imread(str(image_path))
+    if frame is None:
+        raise CliError(f"Could not read image source: {image_path}")
+
+    predictions: list[dict[str, Any]] = []
+    for loaded in models:
+        results = loaded["model"].predict(source=str(image_path), conf=confidence, verbose=False)
+        if not results:
+            continue
+        predictions.extend(extract_local_predictions(results[0], loaded["label"]))
+
+    return frame, predictions
+
+
+def predict_local_on_frame(models: list[dict[str, Any]], frame: Any, confidence: float) -> list[dict[str, Any]]:
+    predictions: list[dict[str, Any]] = []
+    for loaded in models:
+        results = loaded["model"].predict(source=frame, conf=confidence, verbose=False)
+        if not results:
+            continue
+        predictions.extend(extract_local_predictions(results[0], loaded["label"]))
+    return predictions
+
+
+def run_local_image_predict(
+    *,
+    models: list[dict[str, Any]],
+    image_sources: list[Path],
+    output_dir: Path,
+    confidence: float,
+    save_json_outputs: bool,
+    stroke: int,
+    font_scale: float,
+) -> dict[str, dict[str, str]]:
+    cv2 = require_cv2()
+    outputs: dict[str, dict[str, str]] = {}
+
+    for index, image_path in enumerate(image_sources, start=1):
+        frame, predictions = predict_local_on_image(models, image_path, confidence)
+        annotated = draw_detections(frame, predictions, stroke=stroke, font_scale=font_scale)
+        basename = f"{index:04d}_{image_path.stem}" if len(image_sources) > 1 else image_path.stem
+        image_output = output_dir / f"{basename}_pred.jpg"
+        cv2.imwrite(str(image_output), annotated)
+
+        record = {"image": str(image_output.resolve())}
+        if save_json_outputs:
+            json_output = output_dir / f"{basename}.json"
+            write_json(
+                json_output,
+                {
+                    "image": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
+                    "predictions": predictions,
+                    "models": [{"label": loaded["label"], "path": loaded["path"]} for loaded in models],
+                },
+            )
+            record["json"] = str(json_output.resolve())
+
+        outputs[str(image_path.resolve())] = record
+
+    return outputs
+
+
+def run_local_video_predict(
+    *,
+    models: list[dict[str, Any]],
+    video_path: Path,
+    output_dir: Path,
+    confidence: float,
+    stroke: int,
+    font_scale: float,
+    save_json_outputs: bool,
+) -> dict[str, str]:
+    cv2 = require_cv2()
+
+    capture = cv2.VideoCapture(str(video_path))
+    if not capture.isOpened():
+        raise CliError(f"Could not open video source: {video_path}")
+
+    fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    if width <= 0 or height <= 0:
+        capture.release()
+        raise CliError(f"Could not determine video dimensions for: {video_path}")
+
+    video_output = output_dir / f"{video_path.stem}_pred.mp4"
+    writer = cv2.VideoWriter(str(video_output), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    if not writer.isOpened():
+        capture.release()
+        raise CliError(f"Could not create output video: {video_output}")
+
+    frame_results: list[dict[str, Any]] = []
+    frame_index = 0
+    try:
+        while True:
+            ok, frame = capture.read()
+            if not ok:
+                break
+
+            frame_index += 1
+            predictions = predict_local_on_frame(models, frame, confidence)
+            annotated = draw_detections(frame, predictions, stroke=stroke, font_scale=font_scale)
+            writer.write(annotated)
+
+            if save_json_outputs:
+                frame_results.append(
+                    {
+                        "frame": frame_index,
+                        "time": frame_index / fps if fps else frame_index,
+                        "predictions": predictions,
+                    }
+                )
+
+            if frame_index % 25 == 0:
+                print(f"Processed {frame_index} frames...")
+    finally:
+        capture.release()
+        writer.release()
+
+    outputs = {"video": str(video_output.resolve())}
+    if save_json_outputs:
+        json_output = output_dir / f"{video_path.stem}.json"
+        write_json(
+            json_output,
+            {
+                "source": str(video_path.resolve()),
+                "fps": fps,
+                "width": width,
+                "height": height,
+                "frame_count": frame_index,
+                "frames": frame_results,
+                "models": [{"label": loaded["label"], "path": loaded["path"]} for loaded in models],
             },
         )
         outputs["json"] = str(json_output.resolve())
@@ -443,6 +658,52 @@ def handle_hosted_predict(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_local_predict(args: argparse.Namespace) -> int:
+    output_root = resolve_path(args.output_root)
+    run_dir = output_root / args.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    models = load_local_models(args)
+    input_kind, inference_input = resolve_inference_input(args)
+
+    if input_kind == "video":
+        assert isinstance(inference_input, Path)
+        outputs = {
+            str(inference_input.resolve()): run_local_video_predict(
+                models=models,
+                video_path=inference_input,
+                output_dir=run_dir,
+                confidence=args.conf,
+                stroke=args.stroke,
+                font_scale=args.font_scale,
+                save_json_outputs=not args.no_json,
+            )
+        }
+    else:
+        assert isinstance(inference_input, list)
+        outputs = run_local_image_predict(
+            models=models,
+            image_sources=inference_input,
+            output_dir=run_dir,
+            confidence=args.conf,
+            save_json_outputs=not args.no_json,
+            stroke=args.stroke,
+            font_scale=args.font_scale,
+        )
+
+    manifest_path = save_run_manifest(
+        output_root,
+        {
+            "command": args.command,
+            "local_models": [{"label": loaded["label"], "path": loaded["path"]} for loaded in models],
+            "prediction_outputs": outputs,
+        },
+    )
+    print(json.dumps(outputs, indent=2))
+    print(f"Manifest saved to: {manifest_path}")
+    return 0
+
+
 def add_preset_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--preset",
@@ -471,9 +732,42 @@ def add_hosted_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rf-model-version", help="Hosted Roboflow model version number.")
 
 
+def add_shared_inference_args(parser: argparse.ArgumentParser, output_root: Path) -> None:
+    parser.add_argument("--source", help="Path to a single image, video, or a directory of images.")
+    parser.add_argument("--video", help="Path to a video file.")
+    parser.add_argument(
+        "--output-root",
+        default=str(output_root),
+        help="Directory that receives inference outputs and last_run.json.",
+    )
+    parser.add_argument(
+        "--run-name",
+        default="predict",
+        help="Subdirectory under the output root that receives this inference run.",
+    )
+    parser.add_argument("--conf", type=float, default=DEFAULT_CONFIDENCE, help="Prediction confidence threshold.")
+    parser.add_argument(
+        "--stroke",
+        type=int,
+        default=DEFAULT_LABEL_STROKE,
+        help="Bounding-box line thickness for video overlays.",
+    )
+    parser.add_argument(
+        "--font-scale",
+        type=float,
+        default=DEFAULT_FONT_SCALE,
+        help="Text scale for video overlay labels.",
+    )
+    parser.add_argument(
+        "--no-json",
+        action="store_true",
+        help="Skip per-image or per-frame JSON sidecar outputs.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Hosted Roboflow lionfish inference for image folders, single images, and video."
+        description="Hosted and local marine-species inference for images and video."
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -485,39 +779,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the hosted Roboflow detector on an image, image directory, or video.",
     )
     add_preset_args(hosted_parser)
-    hosted_parser.add_argument("--source", help="Path to a single image, video, or a directory of images.")
-    hosted_parser.add_argument("--video", help="Path to a video file.")
-    hosted_parser.add_argument(
-        "--output-root",
-        default=str(DEFAULT_OUTPUT_ROOT),
-        help="Directory that receives hosted prediction outputs and last_run.json.",
-    )
-    hosted_parser.add_argument(
-        "--run-name",
-        default="hosted-predict",
-        help="Subdirectory under the output root that receives this inference run.",
-    )
-    hosted_parser.add_argument("--conf", type=float, default=DEFAULT_CONFIDENCE, help="Prediction confidence threshold.")
-    hosted_parser.add_argument(
-        "--stroke",
-        type=int,
-        default=DEFAULT_LABEL_STROKE,
-        help="Bounding-box line thickness for video overlays.",
-    )
-    hosted_parser.add_argument(
-        "--font-scale",
-        type=float,
-        default=DEFAULT_FONT_SCALE,
-        help="Text scale for video overlay labels.",
-    )
-    hosted_parser.add_argument(
-        "--no-json",
-        action="store_true",
-        help="Skip per-image or per-frame JSON sidecar outputs.",
-    )
+    add_shared_inference_args(hosted_parser, DEFAULT_OUTPUT_ROOT)
     add_roboflow_args(hosted_parser)
     add_hosted_model_args(hosted_parser)
     hosted_parser.set_defaults(handler=handle_hosted_predict)
+
+    local_parser = subparsers.add_parser(
+        "local-predict",
+        help="Run one or more local YOLO models on an image, image directory, or video.",
+    )
+    add_shared_inference_args(local_parser, DEFAULT_LOCAL_OUTPUT_ROOT)
+    local_parser.add_argument(
+        "--model-path",
+        action="append",
+        default=[],
+        help="Path to a local YOLO model weight file. Pass more than once to combine models.",
+    )
+    local_parser.add_argument(
+        "--model-label",
+        action="append",
+        default=[],
+        help="Optional label for each --model-path. If omitted, the file stem is used.",
+    )
+    local_parser.set_defaults(handler=handle_local_predict)
 
     return parser
 

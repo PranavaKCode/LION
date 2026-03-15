@@ -1,6 +1,14 @@
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  DEFAULT_DETECTOR_ID,
+  getDetectorOption,
+  normalizeReefSpecialties,
+  type ReefSpecialtyId,
+} from "../../../lib/detector-config";
 import type {
   LiveLabApiResponse,
   LiveLabCompleteResponse,
@@ -22,7 +30,23 @@ const DEFAULT_MODEL_WORKSPACE = "su-eaelw";
 const DEFAULT_MODEL_PROJECT = "lionfish-qs3tq";
 const DEFAULT_MODEL_VERSION = 49;
 const DEFAULT_VIDEO_INFER_FPS = 5;
+const DEFAULT_MARINE_DETECT_API_URL = "https://marine-detect-api.onrender.com";
 const VIDEO_POLL_INTERVAL_MS = 10000;
+const LOCAL_UPLOAD_ROOT = path.resolve(process.cwd(), "runs", "live-lab-inputs");
+const LOCAL_REEF_RUN_ROOT = path.resolve(process.cwd(), "runs", "reef-health-live-lab");
+
+const LOCAL_REEF_MODEL_SPECS: Record<ReefSpecialtyId, { label: string; envVar: string; fallbackPaths: string[] }> = {
+  "fish-invertebrates": {
+    label: "Fish + Invertebrates",
+    envVar: "FISH_INV_MODEL_PATH",
+    fallbackPaths: [path.resolve(process.cwd(), "models", "FishInv.pt")],
+  },
+  megafauna: {
+    label: "MegaFauna + Rare Species",
+    envVar: "MEGA_FAUNA_MODEL_PATH",
+    fallbackPaths: [path.resolve(process.cwd(), "models", "MegaFauna.pt")],
+  },
+};
 
 type ServerConfig = {
   apiKey?: string;
@@ -30,6 +54,14 @@ type ServerConfig = {
   modelProject: string;
   modelVersion: number;
   videoInferFps: number;
+  pythonCommand: string;
+  envValues: Record<string, string>;
+};
+
+type HostedModelConfig = {
+  modelWorkspace: string;
+  modelProject: string;
+  modelVersion: number;
 };
 
 type RoboflowPrediction = {
@@ -72,10 +104,46 @@ type RoboflowVideoOutputPayload = {
   [key: string]: unknown;
 };
 
+type LocalImagePayload = {
+  predictions?: RoboflowPrediction[];
+  image?: {
+    width?: number;
+    height?: number;
+  };
+};
+
+type LocalVideoFramePayload = {
+  frame?: number;
+  time?: number;
+  predictions?: RoboflowPrediction[];
+};
+
+type LocalVideoPayload = {
+  source?: string;
+  fps?: number;
+  width?: number;
+  height?: number;
+  frame_count?: number;
+  frames?: LocalVideoFramePayload[];
+};
+
+type PredictionOutputRecord = {
+  image?: string;
+  video?: string;
+  json?: string;
+};
+
+type LocalManifestPayload = {
+  prediction_outputs?: Record<string, PredictionOutputRecord>;
+};
+
 type StartVideoJobRequest = {
   intent?: string;
   inputUrl?: string;
   sourceName?: string;
+  detectorId?: string;
+  specialties?: string[];
+  confidence?: number;
 };
 
 function isServerlessHost() {
@@ -144,13 +212,13 @@ function formatRuntime(totalSeconds?: number) {
   return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
 
-function buildModelDisplay(config: ServerConfig) {
-  return `${config.modelWorkspace}/${config.modelProject}/${config.modelVersion}`;
-}
-
 function sanitizeSourceName(value: string | null | undefined, fallback: string) {
   const trimmed = value?.trim();
   return trimmed ? trimmed.slice(0, 200) : fallback;
+}
+
+function sanitizeFilename(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 function normalizePrediction(prediction: RoboflowPrediction): LiveLabPrediction {
@@ -168,51 +236,6 @@ function filterPredictions(predictions: LiveLabPrediction[], confidence: number)
   return predictions.filter((prediction) => prediction.confidence >= confidence);
 }
 
-async function resolveServerConfig(): Promise<ServerConfig> {
-  const envFromProcess = {
-    apiKey: process.env.ROBOFLOW_API_KEY,
-    modelWorkspace: process.env.ROBOFLOW_WORKSPACE,
-    modelProject: process.env.ROBOFLOW_PROJECT,
-    modelVersion: process.env.ROBOFLOW_MODEL_VERSION,
-    videoInferFps: process.env.ROBOFLOW_VIDEO_INFER_FPS,
-  };
-
-  const envFiles = [path.join(process.cwd(), ".env.local"), path.join(process.cwd(), ".env")];
-  const envFromFiles: Record<string, string> = {};
-
-  for (const envFile of envFiles) {
-    try {
-      Object.assign(envFromFiles, parseEnvFile(await readFile(envFile, "utf8")));
-    } catch {
-      // Ignore missing env files and continue with other sources.
-    }
-  }
-
-  return {
-    apiKey: envFromProcess.apiKey || envFromFiles.ROBOFLOW_API_KEY,
-    modelWorkspace: envFromProcess.modelWorkspace || envFromFiles.ROBOFLOW_WORKSPACE || DEFAULT_MODEL_WORKSPACE,
-    modelProject: envFromProcess.modelProject || envFromFiles.ROBOFLOW_PROJECT || DEFAULT_MODEL_PROJECT,
-    modelVersion:
-      toNumber(envFromProcess.modelVersion) ||
-      toNumber(envFromFiles.ROBOFLOW_MODEL_VERSION) ||
-      DEFAULT_MODEL_VERSION,
-    videoInferFps:
-      toNumber(envFromProcess.videoInferFps) ||
-      toNumber(envFromFiles.ROBOFLOW_VIDEO_INFER_FPS) ||
-      DEFAULT_VIDEO_INFER_FPS,
-  };
-}
-
-async function fetchJson<T>(url: string, init: RequestInit, errorLabel: string): Promise<T> {
-  const response = await fetch(url, { ...init, cache: "no-store" });
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(`${errorLabel}: ${details || response.statusText}`);
-  }
-
-  return (await response.json()) as T;
-}
-
 function buildSummary(predictions: LiveLabPrediction[]) {
   const confidences = predictions.map((prediction) => prediction.confidence).filter((value) => Number.isFinite(value));
   const average = confidences.length
@@ -227,13 +250,30 @@ function buildSummary(predictions: LiveLabPrediction[]) {
   };
 }
 
+function buildHostedModelConfig(config: ServerConfig, detectorId?: string | null): HostedModelConfig {
+  const detector = getDetectorOption(detectorId ?? DEFAULT_DETECTOR_ID);
+  return {
+    modelWorkspace: detector.hostedModelWorkspace || config.modelWorkspace,
+    modelProject: detector.hostedModelProject || config.modelProject,
+    modelVersion: detector.hostedModelVersion || config.modelVersion,
+  };
+}
+
+function buildHostedModelDisplay(config: HostedModelConfig) {
+  return config.modelWorkspace && config.modelWorkspace !== "roboflow"
+    ? `${config.modelWorkspace}/${config.modelProject}/${config.modelVersion}`
+    : `${config.modelProject}/${config.modelVersion}`;
+}
+
 function buildImageResult(options: {
-  config: ServerConfig;
-  payload: RoboflowImagePayload;
+  modelDisplay: string;
+  payload: RoboflowImagePayload | LocalImagePayload;
   confidence: number;
   sourceName: string;
+  outputMode: string;
+  manifestLabel?: string | null;
 }): LiveLabResult {
-  const { config, payload, confidence, sourceName } = options;
+  const { modelDisplay, payload, confidence, sourceName, outputMode, manifestLabel } = options;
   const predictions = filterPredictions((payload.predictions ?? []).map(normalizePrediction), confidence);
   const summary = buildSummary(predictions);
   const width = toNumber(payload.image?.width);
@@ -243,8 +283,8 @@ function buildImageResult(options: {
     annotatedKind: "image",
     annotatedUrl: null,
     jsonUrl: null,
-    manifestUrl: null,
-    model: buildModelDisplay(config),
+    manifestUrl: manifestLabel ?? null,
+    model: modelDisplay,
     sourceName,
     detectionCount: summary.detectionCount,
     frameCount: "1",
@@ -253,7 +293,7 @@ function buildImageResult(options: {
     fps: "N/A",
     resolution: Number.isFinite(width) && Number.isFinite(height) ? `${width} x ${height}` : "N/A",
     runtime: "N/A",
-    outputMode: "remote image api + overlay",
+    outputMode,
     overlay:
       Number.isFinite(width) && Number.isFinite(height)
         ? {
@@ -266,23 +306,24 @@ function buildImageResult(options: {
   };
 }
 
-function buildVideoResult(options: {
-  config: ServerConfig;
+function buildHostedVideoResult(options: {
+  modelDisplay: string;
+  modelProject: string;
+  inferFps: number;
   payload: RoboflowVideoOutputPayload;
   confidence: number;
   sourceName: string;
   jsonUrl: string | null;
 }): LiveLabResult {
-  const { config, payload, confidence, sourceName, jsonUrl } = options;
+  const { modelDisplay, modelProject, inferFps, payload, confidence, sourceName, jsonUrl } = options;
   const frameOffsets = Array.isArray(payload.frame_offset) ? payload.frame_offset : [];
   const timeOffsets = Array.isArray(payload.time_offset) ? payload.time_offset : [];
-  const modelKey =
-    Object.keys(payload).find((key) => key !== "frame_offset" && key !== "time_offset") ?? config.modelProject;
+  const modelKey = Object.keys(payload).find((key) => key !== "frame_offset" && key !== "time_offset") ?? modelProject;
   const rawFrames = Array.isArray(payload[modelKey]) ? (payload[modelKey] as RoboflowVideoFramePayload[]) : [];
 
   const frames: LiveLabVideoFrame[] = rawFrames.map((framePayload, index) => ({
     frame: toNumber(frameOffsets[index]) ?? index,
-    time: toNumber(timeOffsets[index]) ?? toNumber(framePayload.time) ?? index / config.videoInferFps,
+    time: toNumber(timeOffsets[index]) ?? toNumber(framePayload.time) ?? index / inferFps,
     predictions: filterPredictions((framePayload.predictions ?? []).map(normalizePrediction), confidence),
   }));
 
@@ -298,13 +339,13 @@ function buildVideoResult(options: {
     annotatedUrl: null,
     jsonUrl,
     manifestUrl: null,
-    model: buildModelDisplay(config),
+    model: modelDisplay,
     sourceName,
     detectionCount: summary.detectionCount,
     frameCount: String(rawFrames.length),
     avgConfidence: summary.avgConfidence,
     maxConfidence: summary.maxConfidence,
-    fps: formatMetric(config.videoInferFps),
+    fps: formatMetric(inferFps),
     resolution: Number.isFinite(width) && Number.isFinite(height) ? `${width} x ${height}` : "N/A",
     runtime: formatRuntime(runtimeSeconds),
     outputMode: "remote video api + overlay",
@@ -314,11 +355,225 @@ function buildVideoResult(options: {
             kind: "video",
             width: width!,
             height: height!,
-            sampleFps: config.videoInferFps,
+            sampleFps: inferFps,
             frames,
           }
         : null,
   };
+}
+
+function buildLocalVideoResult(options: {
+  modelDisplay: string;
+  payload: LocalVideoPayload;
+  confidence: number;
+  sourceName: string;
+  manifestLabel: string | null;
+}): LiveLabResult {
+  const { modelDisplay, payload, confidence, sourceName, manifestLabel } = options;
+  const frames: LiveLabVideoFrame[] = (payload.frames ?? []).map((framePayload, index) => ({
+    frame: toNumber(framePayload.frame) ?? index + 1,
+    time: toNumber(framePayload.time) ?? (toNumber(payload.fps) ? index / Number(payload.fps) : index),
+    predictions: filterPredictions((framePayload.predictions ?? []).map(normalizePrediction), confidence),
+  }));
+
+  const allPredictions = frames.flatMap((frame) => frame.predictions);
+  const summary = buildSummary(allPredictions);
+  const runtimeSeconds =
+    Number.isFinite(payload.frame_count) && Number.isFinite(payload.fps) && payload.fps
+      ? Number(payload.frame_count) / Number(payload.fps)
+      : frames.length
+        ? Math.max(...frames.map((frame) => frame.time))
+        : undefined;
+
+  return {
+    annotatedKind: "video",
+    annotatedUrl: null,
+    jsonUrl: null,
+    manifestUrl: manifestLabel,
+    model: modelDisplay,
+    sourceName,
+    detectionCount: summary.detectionCount,
+    frameCount: Number.isFinite(payload.frame_count) ? String(payload.frame_count) : String(frames.length),
+    avgConfidence: summary.avgConfidence,
+    maxConfidence: summary.maxConfidence,
+    fps: formatMetric(toNumber(payload.fps)),
+    resolution:
+      Number.isFinite(payload.width) && Number.isFinite(payload.height)
+        ? `${payload.width} x ${payload.height}`
+        : "N/A",
+    runtime: formatRuntime(runtimeSeconds),
+    outputMode: "local reef-health suite + overlay",
+    overlay:
+      Number.isFinite(payload.width) && Number.isFinite(payload.height)
+        ? {
+            kind: "video",
+            width: payload.width!,
+            height: payload.height!,
+            sampleFps: toNumber(payload.fps) ?? 1,
+            frames,
+          }
+        : null,
+  };
+}
+
+async function resolveServerConfig(): Promise<ServerConfig> {
+  const envFromProcess = {
+    apiKey: process.env.ROBOFLOW_API_KEY,
+    modelWorkspace: process.env.ROBOFLOW_WORKSPACE,
+    modelProject: process.env.ROBOFLOW_PROJECT,
+    modelVersion: process.env.ROBOFLOW_MODEL_VERSION,
+    videoInferFps: process.env.ROBOFLOW_VIDEO_INFER_FPS,
+    pythonCommand: process.env.LION_PYTHON_BIN || process.env.LIONFISH_PYTHON_BIN,
+  };
+
+  const envOverrides = {
+    ROBOFLOW_API_KEY: process.env.ROBOFLOW_API_KEY,
+    ROBOFLOW_WORKSPACE: process.env.ROBOFLOW_WORKSPACE,
+    ROBOFLOW_PROJECT: process.env.ROBOFLOW_PROJECT,
+    ROBOFLOW_MODEL_VERSION: process.env.ROBOFLOW_MODEL_VERSION,
+    ROBOFLOW_VIDEO_INFER_FPS: process.env.ROBOFLOW_VIDEO_INFER_FPS,
+    LION_PYTHON_BIN: process.env.LION_PYTHON_BIN,
+    LIONFISH_PYTHON_BIN: process.env.LIONFISH_PYTHON_BIN,
+    FISH_INV_MODEL_PATH: process.env.FISH_INV_MODEL_PATH,
+    MEGA_FAUNA_MODEL_PATH: process.env.MEGA_FAUNA_MODEL_PATH,
+    MARINE_DETECT_API_URL: process.env.MARINE_DETECT_API_URL,
+    MARINE_DETECT_API_TOKEN: process.env.MARINE_DETECT_API_TOKEN,
+  };
+
+  const envFiles = [path.join(process.cwd(), ".env.local"), path.join(process.cwd(), ".env")];
+  const envFromFiles: Record<string, string> = {};
+
+  for (const envFile of envFiles) {
+    try {
+      Object.assign(envFromFiles, parseEnvFile(await readFile(envFile, "utf8")));
+    } catch {
+      // Ignore missing env files and continue with other sources.
+    }
+  }
+
+  const envValues = {
+    ...envFromFiles,
+    ...Object.fromEntries(
+      Object.entries(envOverrides).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    ),
+  };
+
+  return {
+    apiKey: envFromProcess.apiKey || envFromFiles.ROBOFLOW_API_KEY,
+    modelWorkspace: envFromProcess.modelWorkspace || envFromFiles.ROBOFLOW_WORKSPACE || DEFAULT_MODEL_WORKSPACE,
+    modelProject: envFromProcess.modelProject || envFromFiles.ROBOFLOW_PROJECT || DEFAULT_MODEL_PROJECT,
+    modelVersion:
+      toNumber(envFromProcess.modelVersion) ||
+      toNumber(envFromFiles.ROBOFLOW_MODEL_VERSION) ||
+      DEFAULT_MODEL_VERSION,
+    videoInferFps:
+      toNumber(envFromProcess.videoInferFps) ||
+      toNumber(envFromFiles.ROBOFLOW_VIDEO_INFER_FPS) ||
+      DEFAULT_VIDEO_INFER_FPS,
+    pythonCommand:
+      envFromProcess.pythonCommand || envFromFiles.LION_PYTHON_BIN || envFromFiles.LIONFISH_PYTHON_BIN || "python",
+    envValues,
+  };
+}
+
+async function fetchJson<T>(url: string, init: RequestInit, errorLabel: string): Promise<T> {
+  const response = await fetch(url, { ...init, cache: "no-store" });
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`${errorLabel}: ${details || response.statusText}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+function resolveMarineDetectService(config: ServerConfig) {
+  const serviceUrl = config.envValues.MARINE_DETECT_API_URL?.trim() || DEFAULT_MARINE_DETECT_API_URL;
+  if (!serviceUrl) {
+    return null;
+  }
+
+  return {
+    url: serviceUrl.replace(/\/$/, ""),
+    token: config.envValues.MARINE_DETECT_API_TOKEN?.trim() || null,
+  };
+}
+
+function buildMarineDetectHeaders(service: { url: string; token: string | null }, includeJson = false) {
+  const headers = new Headers();
+  if (includeJson) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (service.token) {
+    headers.set("Authorization", `Bearer ${service.token}`);
+  }
+  return headers;
+}
+
+async function runRemoteReefHealthSuiteUpload(options: {
+  config: ServerConfig;
+  file: File;
+  confidence: number;
+  specialties: ReefSpecialtyId[];
+}): Promise<LiveLabCompleteResponse> {
+  const { config, file, confidence, specialties } = options;
+  const service = resolveMarineDetectService(config);
+  if (!service) {
+    throw new Error("MARINE_DETECT_API_URL is not configured for remote Reef Health Suite inference.");
+  }
+
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("confidence", confidence.toString());
+  for (const specialty of specialties) {
+    formData.append("specialties", specialty);
+  }
+
+  const response = await fetch(`${service.url}/detect/upload`, {
+    method: "POST",
+    headers: buildMarineDetectHeaders(service),
+    body: formData,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Remote reef-health service error: ${details || response.statusText}`);
+  }
+
+  return (await response.json()) as LiveLabCompleteResponse;
+}
+
+async function runRemoteReefHealthSuiteFromUrl(options: {
+  config: ServerConfig;
+  inputUrl: string;
+  sourceName: string;
+  confidence: number;
+  specialties: ReefSpecialtyId[];
+}): Promise<LiveLabCompleteResponse> {
+  const { config, inputUrl, sourceName, confidence, specialties } = options;
+  const service = resolveMarineDetectService(config);
+  if (!service) {
+    throw new Error("MARINE_DETECT_API_URL is not configured for remote Reef Health Suite inference.");
+  }
+
+  const response = await fetch(`${service.url}/detect/url`, {
+    method: "POST",
+    headers: buildMarineDetectHeaders(service, true),
+    body: JSON.stringify({
+      inputUrl,
+      sourceName,
+      confidence,
+      specialties,
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Remote reef-health service error: ${details || response.statusText}`);
+  }
+
+  return (await response.json()) as LiveLabCompleteResponse;
 }
 
 async function requestVideoUploadUrl(fileName: string, config: ServerConfig) {
@@ -354,10 +609,11 @@ async function uploadVideoFileToRoboflow(file: File, config: ServerConfig) {
 
 async function startVideoJob(options: {
   config: ServerConfig;
+  modelConfig: HostedModelConfig;
   inputUrl: string;
   sourceName: string;
 }): Promise<LiveLabQueuedResponse> {
-  const { config, inputUrl, sourceName } = options;
+  const { config, modelConfig, inputUrl, sourceName } = options;
   const jobPayload = await fetchJson<RoboflowVideoJobPayload>(
     `${ROBOFLOW_API_URL}/videoinfer/?api_key=${encodeURIComponent(config.apiKey!)}`,
     {
@@ -368,8 +624,8 @@ async function startVideoJob(options: {
         infer_fps: config.videoInferFps,
         models: [
           {
-            model_id: config.modelProject,
-            model_version: config.modelVersion,
+            model_id: modelConfig.modelProject,
+            model_version: modelConfig.modelVersion,
             inference_type: "object-detection",
           },
         ],
@@ -387,7 +643,7 @@ async function startVideoJob(options: {
     jobId: jobPayload.job_id,
     pollAfterMs: VIDEO_POLL_INTERVAL_MS,
     annotatedKind: "video",
-    model: buildModelDisplay(config),
+    model: buildHostedModelDisplay(modelConfig),
     sourceName,
     message: "Video uploaded. Roboflow is processing frames remotely.",
   };
@@ -395,11 +651,12 @@ async function startVideoJob(options: {
 
 async function pollVideoJob(options: {
   config: ServerConfig;
+  modelConfig: HostedModelConfig;
   jobId: string;
   confidence: number;
   sourceName: string;
 }): Promise<LiveLabApiResponse> {
-  const { config, jobId, confidence, sourceName } = options;
+  const { config, modelConfig, jobId, confidence, sourceName } = options;
   const statusPayload = await fetchJson<RoboflowVideoJobPayload>(
     `${ROBOFLOW_API_URL}/videoinfer/?api_key=${encodeURIComponent(config.apiKey!)}&job_id=${encodeURIComponent(jobId)}`,
     {
@@ -415,7 +672,7 @@ async function pollVideoJob(options: {
       jobId,
       pollAfterMs: VIDEO_POLL_INTERVAL_MS,
       annotatedKind: "video",
-      model: buildModelDisplay(config),
+      model: buildHostedModelDisplay(modelConfig),
       sourceName,
       message: "Remote video detection is still running. Checking again shortly.",
     };
@@ -434,8 +691,10 @@ async function pollVideoJob(options: {
     "Error downloading Roboflow video results",
   );
 
-  const result = buildVideoResult({
-    config,
+  const result = buildHostedVideoResult({
+    modelDisplay: buildHostedModelDisplay(modelConfig),
+    modelProject: modelConfig.modelProject,
+    inferFps: config.videoInferFps,
     payload: outputPayload,
     confidence,
     sourceName,
@@ -449,6 +708,156 @@ async function pollVideoJob(options: {
   };
 
   return response;
+}
+
+function runPythonCommand(command: string, args: string[]) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      env: process.env,
+      windowsHide: true,
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+
+      reject(new Error(stderr.trim() || stdout.trim() || `Python process exited with code ${code}.`));
+    });
+  });
+}
+
+async function resolveExistingPath(candidates: string[]) {
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Keep searching.
+    }
+  }
+
+  return null;
+}
+
+async function resolveLocalSuiteModels(config: ServerConfig, specialties: ReefSpecialtyId[]) {
+  const resolved = [] as Array<{ id: ReefSpecialtyId; label: string; path: string }>;
+
+  for (const specialty of specialties) {
+    const spec = LOCAL_REEF_MODEL_SPECS[specialty];
+    const configuredPath = config.envValues[spec.envVar];
+    const modelPath = await resolveExistingPath([configuredPath, ...spec.fallbackPaths].filter(Boolean) as string[]);
+    if (!modelPath) {
+      throw new Error(
+        `Could not find the ${spec.label} model. Set ${spec.envVar} in .env.local or place the weight at one of the expected fallback paths.`,
+      );
+    }
+
+    resolved.push({ id: specialty, label: spec.label, path: modelPath });
+  }
+
+  return resolved;
+}
+
+async function writeUploadedInput(file: File) {
+  const inputDir = path.join(LOCAL_UPLOAD_ROOT, randomUUID());
+  await mkdir(inputDir, { recursive: true });
+  const inputPath = path.join(inputDir, sanitizeFilename(file.name || "upload.bin"));
+  await writeFile(inputPath, Buffer.from(await file.arrayBuffer()));
+  return inputPath;
+}
+
+async function runLocalReefHealthSuite(options: {
+  config: ServerConfig;
+  file: File;
+  confidence: number;
+  specialties: ReefSpecialtyId[];
+}): Promise<LiveLabCompleteResponse> {
+  const { config, file, confidence, specialties } = options;
+
+  if (isServerlessHost()) {
+    throw new Error(
+      "The Reef Health Suite is local-only for now because it depends on YOLO weight files and a local Python environment.",
+    );
+  }
+
+  const models = await resolveLocalSuiteModels(config, specialties);
+  const inputPath = await writeUploadedInput(file);
+  const runRoot = path.join(LOCAL_REEF_RUN_ROOT, randomUUID());
+  const args = [path.resolve(process.cwd(), "lionfish_yolo.py"), "local-predict"];
+
+  if (file.type.startsWith("video/")) {
+    args.push("--video", inputPath);
+  } else {
+    args.push("--source", inputPath);
+  }
+
+  args.push("--output-root", runRoot, "--run-name", "predict", "--conf", confidence.toString());
+
+  for (const model of models) {
+    args.push("--model-path", model.path, "--model-label", model.label);
+  }
+
+  await runPythonCommand(config.pythonCommand, args);
+
+  const manifestPath = path.join(runRoot, "last_run.json");
+  const manifestRaw = await readFile(manifestPath, "utf8");
+  const manifest = JSON.parse(manifestRaw) as LocalManifestPayload;
+  const outputRecord = Object.values(manifest.prediction_outputs ?? {})[0];
+  const jsonPath = outputRecord?.json;
+  if (!jsonPath) {
+    throw new Error("The local reef-health suite did not produce a JSON overlay payload.");
+  }
+
+  const payloadRaw = await readFile(jsonPath, "utf8");
+  const modelDisplay = `reef-health-suite / ${models.map((model) => model.label).join(" + ")}`;
+  const manifestLabel = path.relative(process.cwd(), manifestPath).replace(/\\/g, "/");
+
+  if (file.type.startsWith("video/")) {
+    const payload = JSON.parse(payloadRaw) as LocalVideoPayload;
+    return {
+      status: "complete",
+      message: "Local reef-health detection complete.",
+      result: buildLocalVideoResult({
+        modelDisplay,
+        payload,
+        confidence,
+        sourceName: sanitizeSourceName(file.name, "uploaded-video.mp4"),
+        manifestLabel,
+      }),
+    };
+  }
+
+  const payload = JSON.parse(payloadRaw) as LocalImagePayload;
+  return {
+    status: "complete",
+    message: "Local reef-health detection complete.",
+    result: buildImageResult({
+      modelDisplay,
+      payload,
+      confidence,
+      sourceName: sanitizeSourceName(file.name, "uploaded-image.jpg"),
+      outputMode: "local reef-health suite + overlay",
+      manifestLabel,
+    }),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -465,13 +874,25 @@ export async function GET(request: NextRequest) {
   const jobId = request.nextUrl.searchParams.get("jobId");
   const confidence = clampConfidence(Number(request.nextUrl.searchParams.get("confidence") ?? DEFAULT_CONFIDENCE));
   const sourceName = sanitizeSourceName(request.nextUrl.searchParams.get("sourceName"), "uploaded-video.mp4");
+  const detectorId = request.nextUrl.searchParams.get("detectorId") ?? DEFAULT_DETECTOR_ID;
+  const detector = getDetectorOption(detectorId);
 
   if (!jobId) {
     return NextResponse.json({ error: "A Roboflow video job id is required." }, { status: 400 });
   }
 
+  if (detector.kind !== "hosted") {
+    return NextResponse.json({ error: "Local detector suites do not use remote polling jobs." }, { status: 400 });
+  }
+
   try {
-    const payload = await pollVideoJob({ config, jobId, confidence, sourceName });
+    const payload = await pollVideoJob({
+      config,
+      modelConfig: buildHostedModelConfig(config, detector.id),
+      jobId,
+      confidence,
+      sourceName,
+    });
     return NextResponse.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Live Lab video polling failed.";
@@ -481,21 +902,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: Request) {
   const config = await resolveServerConfig();
-
-  if (!config.apiKey) {
-    return NextResponse.json(
-      {
-        error:
-          "ROBOFLOW_API_KEY is not configured for the Next.js server. Add it to your deployment environment or local env file and restart the app.",
-      },
-      { status: 500 },
-    );
-  }
-
   const contentType = request.headers.get("content-type") || "";
 
   if (contentType.includes("application/json")) {
     const body = (await request.json()) as StartVideoJobRequest;
+    const detector = getDetectorOption(body.detectorId ?? DEFAULT_DETECTOR_ID);
+    const confidence = clampConfidence(Number(body.confidence ?? DEFAULT_CONFIDENCE));
+    const specialties = normalizeReefSpecialties(body.specialties);
 
     if (body.intent !== "start-video-job") {
       return NextResponse.json({ error: "Unsupported Live Lab request intent." }, { status: 400 });
@@ -506,9 +919,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "A public upload URL is required to start video inference." }, { status: 400 });
     }
 
+    if (detector.kind === "local") {
+      try {
+        const sourceName = sanitizeSourceName(body.sourceName, "uploaded-video.mp4");
+        return NextResponse.json(
+          await runRemoteReefHealthSuiteFromUrl({
+            config,
+            inputUrl,
+            sourceName,
+            confidence,
+            specialties,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Remote reef-health video setup failed.";
+        return NextResponse.json({ error: message }, { status: 500 });
+      }
+    }
+
+    if (!config.apiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "ROBOFLOW_API_KEY is not configured for the Next.js server. Add it to your deployment environment or local env file and restart the app.",
+        },
+        { status: 500 },
+      );
+    }
+
     try {
       const sourceName = sanitizeSourceName(body.sourceName, "uploaded-video.mp4");
-      return NextResponse.json(await startVideoJob({ config, inputUrl, sourceName }));
+      return NextResponse.json(
+        await startVideoJob({
+          config,
+          modelConfig: buildHostedModelConfig(config, detector.id),
+          inputUrl,
+          sourceName,
+        }),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Live Lab video setup failed.";
       return NextResponse.json({ error: message }, { status: 500 });
@@ -518,6 +966,9 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const file = formData.get("file");
   const confidence = clampConfidence(Number(formData.get("confidence") ?? DEFAULT_CONFIDENCE));
+  const detectorId = String(formData.get("detectorId") ?? DEFAULT_DETECTOR_ID);
+  const detector = getDetectorOption(detectorId);
+  const specialties = normalizeReefSpecialties(formData.getAll("specialties").map(String));
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Upload a file before running detection." }, { status: 400 });
@@ -529,6 +980,45 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  if (detector.kind === "local") {
+    try {
+      if (resolveMarineDetectService(config)) {
+        return NextResponse.json(
+          await runRemoteReefHealthSuiteUpload({
+            config,
+            file,
+            confidence,
+            specialties,
+          }),
+        );
+      }
+
+      return NextResponse.json(
+        await runLocalReefHealthSuite({
+          config,
+          file,
+          confidence,
+          specialties,
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Reef-health detection failed.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  if (!config.apiKey) {
+    return NextResponse.json(
+      {
+        error:
+          "ROBOFLOW_API_KEY is not configured for the Next.js server. Add it to your deployment environment or local env file and restart the app.",
+      },
+      { status: 500 },
+    );
+  }
+
+  const modelConfig = buildHostedModelConfig(config, detector.id);
 
   if (file.type.startsWith("image/")) {
     if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
@@ -550,7 +1040,7 @@ export async function POST(request: Request) {
       });
 
       const imagePayload = await fetchJson<RoboflowImagePayload>(
-        `${ROBOFLOW_DETECT_URL}/${config.modelProject}/${config.modelVersion}?${params.toString()}`,
+        `${ROBOFLOW_DETECT_URL}/${modelConfig.modelProject}/${modelConfig.modelVersion}?${params.toString()}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -561,12 +1051,13 @@ export async function POST(request: Request) {
 
       const response: LiveLabCompleteResponse = {
         status: "complete",
-        message: "Remote image detection complete.",
+        message: `${detector.label} detection complete.`,
         result: buildImageResult({
-          config,
+          modelDisplay: buildHostedModelDisplay(modelConfig),
           payload: imagePayload,
           confidence,
           sourceName: sanitizeSourceName(file.name, "uploaded-image.jpg"),
+          outputMode: "remote image api + overlay",
         }),
       };
 
@@ -592,6 +1083,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       await startVideoJob({
         config,
+        modelConfig,
         inputUrl,
         sourceName: sanitizeSourceName(file.name, "uploaded-video.mp4"),
       }),
@@ -601,3 +1093,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+
+
