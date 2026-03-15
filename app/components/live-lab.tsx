@@ -4,6 +4,14 @@ import { upload } from "@vercel/blob/client";
 import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "../page.module.css";
+import {
+  DEFAULT_DETECTOR_ID,
+  DEFAULT_REEF_SPECIALTIES,
+  DETECTOR_OPTIONS,
+  getDetectorOption,
+  type DetectorId,
+  type ReefSpecialtyId,
+} from "../lib/detector-config";
 import type { LionMetrics } from "../lib/lion-data";
 import type {
   LiveLabApiResponse,
@@ -103,7 +111,7 @@ function getOverlayPredictions(overlay: LiveLabOverlay | null, currentTime: numb
 
 function normalizeFetchError(error: unknown) {
   if (error instanceof Error && error.message === "Failed to fetch") {
-    return "The upload request could not reach the remote storage service. Large deployed videos need Vercel Blob configured, while local runs should use the built-in proxy upload path.";
+    return "The upload request could not reach the remote storage service. Large deployed videos need Vercel Blob configured, while local suite runs should stay on your machine.";
   }
 
   return error instanceof Error ? error.message : "Detection failed.";
@@ -117,10 +125,14 @@ async function parseResponse(response: Response) {
   return payload;
 }
 
-async function runServerUpload(file: File, confidence: number) {
+async function runServerUpload(file: File, confidence: number, detectorId: DetectorId, specialties: ReefSpecialtyId[]) {
   const formData = new FormData();
   formData.set("file", file);
   formData.set("confidence", confidence.toFixed(2));
+  formData.set("detectorId", detectorId);
+  for (const specialty of specialties) {
+    formData.append("specialties", specialty);
+  }
 
   const response = await fetch("/api/live-lab/detect", {
     method: "POST",
@@ -140,7 +152,7 @@ async function uploadVideoToBlob(file: File) {
   });
 }
 
-async function startRemoteVideoJob(inputUrl: string, sourceName: string) {
+async function startRemoteVideoJob(inputUrl: string, sourceName: string, detectorId: DetectorId) {
   const response = await fetch("/api/live-lab/detect", {
     method: "POST",
     headers: {
@@ -150,13 +162,19 @@ async function startRemoteVideoJob(inputUrl: string, sourceName: string) {
       intent: "start-video-job",
       inputUrl,
       sourceName,
+      detectorId,
     }),
   });
 
   return parseResponse(response);
 }
 
-function shouldUseServerProxy(file: File) {
+function shouldUseServerProxy(file: File, detectorId: DetectorId) {
+  const detector = getDetectorOption(detectorId);
+  if (detector.kind === "local") {
+    return true;
+  }
+
   return isLocalOrigin() || file.size <= SERVER_PROXY_VIDEO_LIMIT_BYTES;
 }
 
@@ -168,6 +186,8 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
   const pollTimerRef = useRef<number | null>(null);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedDetectorId, setSelectedDetectorId] = useState<DetectorId>(DEFAULT_DETECTOR_ID);
+  const [selectedSpecialties, setSelectedSpecialties] = useState<ReefSpecialtyId[]>([...DEFAULT_REEF_SPECIALTIES]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(0.25);
   const [result, setResult] = useState<LiveLabResult | null>(null);
@@ -177,6 +197,9 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
   const [progressMessage, setProgressMessage] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [panelSize, setPanelSize] = useState<PanelSize>({ width: 0, height: 0 });
+
+  const activeDetector = getDetectorOption(selectedDetectorId);
+  const isLocalSuite = activeDetector.kind === "local";
 
   useEffect(() => {
     return () => {
@@ -227,6 +250,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
           jobId: jobState.jobId,
           confidence: confidence.toFixed(2),
           sourceName: selectedFile.name,
+          detectorId: selectedDetectorId,
         });
 
         const response = await fetch(`/api/live-lab/detect?${params.toString()}`, {
@@ -260,7 +284,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         window.clearTimeout(pollTimerRef.current);
       }
     };
-  }, [jobState, confidence, selectedFile]);
+  }, [jobState, confidence, selectedDetectorId, selectedFile]);
 
   function clearSelection() {
     if (previewUrl) {
@@ -284,6 +308,17 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     if (inputRef.current) {
       inputRef.current.value = "";
     }
+  }
+
+  function toggleSpecialty(specialtyId: ReefSpecialtyId) {
+    setSelectedSpecialties((current) => {
+      if (current.includes(specialtyId)) {
+        const next = current.filter((value) => value !== specialtyId);
+        return next.length ? next : [specialtyId];
+      }
+
+      return [...current, specialtyId];
+    });
   }
 
   function handleFileChange(file: File | null) {
@@ -338,22 +373,30 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
       let payload: LiveLabApiResponse;
 
       if (selectedFile.type.startsWith("video/")) {
-        if (shouldUseServerProxy(selectedFile)) {
-          setProgressMessage(
-            isLocalOrigin()
-              ? "Uploading video through the local Live Lab server..."
-              : "Uploading small video through the deployed Live Lab server...",
-          );
-          payload = await runServerUpload(selectedFile, confidence);
+        if (shouldUseServerProxy(selectedFile, selectedDetectorId)) {
+          if (isLocalSuite) {
+            setProgressMessage("Running the local reef-health suite with your selected model specialties...");
+          } else {
+            setProgressMessage(
+              isLocalOrigin()
+                ? `Uploading video through the local ${activeDetector.shortLabel} server path...`
+                : `Uploading smaller video through the deployed ${activeDetector.shortLabel} server path...`,
+            );
+          }
+          payload = await runServerUpload(selectedFile, confidence, selectedDetectorId, selectedSpecialties);
         } else {
-          setProgressMessage("Uploading large video to Vercel Blob...");
+          setProgressMessage(`Uploading large ${activeDetector.shortLabel} video to Vercel Blob...`);
           const blob = await uploadVideoToBlob(selectedFile);
-          setProgressMessage("Starting remote video inference...");
-          payload = await startRemoteVideoJob(blob.url, selectedFile.name);
+          setProgressMessage(`Starting remote ${activeDetector.shortLabel} video inference...`);
+          payload = await startRemoteVideoJob(blob.url, selectedFile.name, selectedDetectorId);
         }
       } else {
-        setProgressMessage("Sending image to hosted detector...");
-        payload = await runServerUpload(selectedFile, confidence);
+        setProgressMessage(
+          isLocalSuite
+            ? "Running the local reef-health suite on your image..."
+            : `Sending image to the hosted ${activeDetector.shortLabel} detector...`,
+        );
+        payload = await runServerUpload(selectedFile, confidence, selectedDetectorId, selectedSpecialties);
       }
 
       if (payload.status === "complete") {
@@ -414,26 +457,88 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         ? progressMessage ?? "Starting remote detection..."
         : result
           ? `Detection complete via ${result.model}`
-          : "Choose a file and run detection.";
+          : "Choose a file, pick a detector, and run detection.";
   const previewTag = result
-    ? "remote detections"
+    ? `${activeDetector.shortLabel.toLowerCase()} detections`
     : jobState
-      ? "remote job queued"
+      ? `${activeDetector.shortLabel.toLowerCase()} job queued`
       : isRunning && selectedFile?.type.startsWith("video/")
-        ? "uploading remote video"
+        ? `running ${activeDetector.shortLabel.toLowerCase()}`
         : selectedFile
-          ? "local upload"
+          ? `${activeDetector.shortLabel.toLowerCase()} input`
           : "demo preview";
+  const selectedSpecialtyLabels = activeDetector.specialties
+    ?.filter((specialty) => selectedSpecialties.includes(specialty.id))
+    .map((specialty) => specialty.label)
+    .join(" + ");
 
   return (
     <div className={styles.liveGrid}>
       <article className={`${styles.card} ${styles.uploadCard}`}>
         <p className={styles.cardTopline}>Upload dock</p>
-        <h3>Choose a reef clip or still image and run hosted detection.</h3>
+        <h3>Choose a reef clip or still image and route it through the right detector stack.</h3>
         <p>
-          Images go through the Live Lab server route directly. Videos use the local server proxy during development,
-          while larger deployed uploads can stage in Vercel Blob before the remote Roboflow job starts.
+          Hosted invasive-species passes stay deployment-friendly, while the local Reef Health Suite can combine your
+          FishInv and MegaFauna weights when you want broader ecosystem-health reads.
         </p>
+
+        <div className={styles.detectorSection}>
+          <div className={styles.detectorHeaderRow}>
+            <span className={styles.controlEyebrow}>Detector mode</span>
+            <strong>{activeDetector.shortLabel}</strong>
+          </div>
+          <div className={styles.detectorChipRow}>
+            {DETECTOR_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={`${styles.detectorChip} ${selectedDetectorId === option.id ? styles.detectorChipActive : ""}`}
+                onClick={() => {
+                  setSelectedDetectorId(option.id);
+                  setResult(null);
+                  setErrorMessage(null);
+                  setJobState(null);
+                  if (option.kind === "local") {
+                    setSelectedSpecialties([...DEFAULT_REEF_SPECIALTIES]);
+                  }
+                }}
+              >
+                <span>{option.shortLabel}</span>
+                <small>{option.kind === "local" ? "local suite" : "hosted"}</small>
+              </button>
+            ))}
+          </div>
+          <p className={styles.detectorDescription}>{activeDetector.description}</p>
+        </div>
+
+        {activeDetector.specialties ? (
+          <div className={styles.detectorSection}>
+            <div className={styles.detectorHeaderRow}>
+              <span className={styles.controlEyebrow}>Suite specialties</span>
+              <strong>{selectedSpecialtyLabels}</strong>
+            </div>
+            <div className={styles.detectorChipRow}>
+              {activeDetector.specialties.map((specialty) => {
+                const active = selectedSpecialties.includes(specialty.id);
+                return (
+                  <button
+                    key={specialty.id}
+                    type="button"
+                    className={`${styles.detectorChip} ${active ? styles.detectorChipActive : ""}`}
+                    onClick={() => {
+                      toggleSpecialty(specialty.id);
+                    }}
+                  >
+                    <span>{specialty.label}</span>
+                    <small>{specialty.badge}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <p className={styles.detectorDescription}>The local suite is designed for on-machine YOLO runs and is not part of the deployed serverless path.</p>
+          </div>
+        ) : null}
+
         <input
           ref={inputRef}
           id={inputId}
@@ -447,10 +552,10 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <label className={styles.dropzone} htmlFor={inputId}>
           <div className={styles.dropzoneIcon}>{selectedFile ? "OK" : "+"}</div>
           <div className={styles.dropzoneCopy}>
-            {selectedFile ? "Detection input ready" : "Click here to choose footage or stills"}
+            {selectedFile ? `${activeDetector.shortLabel} input ready` : "Click here to choose footage or stills"}
           </div>
           <div className={styles.dropzoneHint}>
-            {selectedFile ? "ready for remote inference" : "accepted / video/* image/*"}
+            {selectedFile ? "ready for analysis" : "accepted / video/* image/*"}
           </div>
         </label>
         <div className={styles.fileChipRow}>
@@ -458,6 +563,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
           <span className={styles.fileChip}>{selectedType}</span>
           <span className={styles.fileChip}>{`size / ${selectedSize}`}</span>
           <span className={styles.fileChip}>{`conf / ${confidence.toFixed(2)}`}</span>
+          <span className={styles.fileChip}>{activeDetector.shortLabel}</span>
         </div>
         <div className={styles.controlStack}>
           <div className={styles.controlHeader}>
@@ -506,9 +612,9 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
       </article>
 
       <article className={`${styles.card} ${styles.monitorCard}`}>
-        <p className={styles.cardTopline}>Annotated monitor</p>
+        <p className={styles.cardTopline}>Active preview feed</p>
         <div className={styles.monitorGrid}>
-          <div ref={previewPanelRef} className={styles.previewPanel}>
+          <div ref={previewPanelRef} className={`${styles.previewPanel} ${styles.previewPanelLarge}`}>
             {displayKind === "image" ? (
               <Image
                 fill
@@ -578,8 +684,8 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
               <strong>{result?.maxConfidence ?? "N/A"}</strong>
             </div>
             <div className={styles.miniMetric}>
-              <span>Model</span>
-              <strong>{result?.model ?? metrics.hostedModel}</strong>
+              <span>Detector</span>
+              <strong>{result?.model ?? activeDetector.label}</strong>
             </div>
             <div className={styles.miniMetric}>
               <span>Resolution</span>
@@ -597,6 +703,14 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <article className={`${styles.card} ${styles.opsCard}`}>
           <p className={styles.cardTopline}>Run context</p>
           <div className={styles.opsGrid}>
+            <div className={styles.miniMetricCompact}>
+              <span>Detector mode</span>
+              <strong>{activeDetector.label}</strong>
+            </div>
+            <div className={styles.miniMetricCompact}>
+              <span>Specialties</span>
+              <strong>{selectedSpecialtyLabels ?? activeDetector.shortLabel}</strong>
+            </div>
             <div className={styles.miniMetricCompact}>
               <span>Manifest</span>
               <strong>{result ? result.manifestUrl ?? "N/A" : metrics.manifestPath}</strong>
@@ -618,9 +732,9 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <article className={`${styles.card} ${styles.opsCard}`}>
           <p className={styles.cardTopline}>Current page state</p>
           <ul className={styles.noteList}>
-            <li>Images use hosted inference through the server route, while local videos can proxy through the same route without Python.</li>
-            <li>Large deployed videos should stage in Vercel Blob first so they avoid browser CORS issues and serverless body limits.</li>
-            <li>The browser renders returned detections over the selected media without pretending an annotated video file was written on the host.</li>
+            <li>Lionfish and Crown of Thorns use hosted Roboflow models that stay deployment-friendly for images and videos.</li>
+            <li>The Reef Health Suite is local-first and can combine FishInv and MegaFauna YOLO weights through the local Python runner.</li>
+            <li>The browser renders returned detections over the selected media so the page stays app-like even when output files are not published.</li>
           </ul>
         </article>
       </div>
