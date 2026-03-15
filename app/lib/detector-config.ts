@@ -215,7 +215,7 @@ export const REEF_GALLERY_SPECIES: readonly GallerySpeciesCard[] = [
   },
 ] as const;
 
-export function getDetectorOption(detectorId?: string | null) {
+export function getDetectorOption(detectorId?: string | null): DetectorOption {
   return DETECTOR_OPTIONS.find((option) => option.id === detectorId) ?? DETECTOR_OPTIONS[0];
 }
 
@@ -227,3 +227,4 @@ export function normalizeReefSpecialties(values: string[] | null | undefined) {
 
   return normalized.length ? normalized : [...DEFAULT_REEF_SPECIALTIES];
 }
+

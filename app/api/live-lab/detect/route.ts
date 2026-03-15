@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -38,12 +38,12 @@ const LOCAL_REEF_MODEL_SPECS: Record<ReefSpecialtyId, { label: string; envVar: s
   "fish-invertebrates": {
     label: "Fish + Invertebrates",
     envVar: "FISH_INV_MODEL_PATH",
-    fallbackPaths: [path.resolve("C:/Users/goodp/Downloads/FishInv.pt")],
+    fallbackPaths: [path.resolve(process.cwd(), "models", "FishInv.pt")],
   },
   megafauna: {
     label: "MegaFauna + Rare Species",
     envVar: "MEGA_FAUNA_MODEL_PATH",
-    fallbackPaths: [path.resolve("C:/Users/goodp/Downloads/MegaFauna.pt")],
+    fallbackPaths: [path.resolve(process.cwd(), "models", "MegaFauna.pt")],
   },
 };
 
@@ -421,8 +421,18 @@ async function resolveServerConfig(): Promise<ServerConfig> {
     modelVersion: process.env.ROBOFLOW_MODEL_VERSION,
     videoInferFps: process.env.ROBOFLOW_VIDEO_INFER_FPS,
     pythonCommand: process.env.LION_PYTHON_BIN || process.env.LIONFISH_PYTHON_BIN,
-    fishInvModelPath: process.env.FISH_INV_MODEL_PATH,
-    megaFaunaModelPath: process.env.MEGA_FAUNA_MODEL_PATH,
+  };
+
+  const envOverrides = {
+    ROBOFLOW_API_KEY: process.env.ROBOFLOW_API_KEY,
+    ROBOFLOW_WORKSPACE: process.env.ROBOFLOW_WORKSPACE,
+    ROBOFLOW_PROJECT: process.env.ROBOFLOW_PROJECT,
+    ROBOFLOW_MODEL_VERSION: process.env.ROBOFLOW_MODEL_VERSION,
+    ROBOFLOW_VIDEO_INFER_FPS: process.env.ROBOFLOW_VIDEO_INFER_FPS,
+    LION_PYTHON_BIN: process.env.LION_PYTHON_BIN,
+    LIONFISH_PYTHON_BIN: process.env.LIONFISH_PYTHON_BIN,
+    FISH_INV_MODEL_PATH: process.env.FISH_INV_MODEL_PATH,
+    MEGA_FAUNA_MODEL_PATH: process.env.MEGA_FAUNA_MODEL_PATH,
   };
 
   const envFiles = [path.join(process.cwd(), ".env.local"), path.join(process.cwd(), ".env")];
@@ -439,7 +449,7 @@ async function resolveServerConfig(): Promise<ServerConfig> {
   const envValues = {
     ...envFromFiles,
     ...Object.fromEntries(
-      Object.entries(envFromProcess).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      Object.entries(envOverrides).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
     ),
   };
 
@@ -673,6 +683,7 @@ async function resolveLocalSuiteModels(config: ServerConfig, specialties: ReefSp
 
 async function writeUploadedInput(file: File) {
   const inputDir = path.join(LOCAL_UPLOAD_ROOT, randomUUID());
+  await mkdir(inputDir, { recursive: true });
   const inputPath = path.join(inputDir, sanitizeFilename(file.name || "upload.bin"));
   await writeFile(inputPath, Buffer.from(await file.arrayBuffer()));
   return inputPath;
@@ -959,3 +970,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+
