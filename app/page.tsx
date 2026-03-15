@@ -186,8 +186,8 @@ export default async function Home() {
             <p className={styles.eyebrow}>Live lab</p>
             <h2>A web-app-first upload and review zone.</h2>
             <p>
-              The upload area now behaves like a real browser control. It lets you select local media and preview it
-              immediately, while clearly marking any still-unwired inference outputs as placeholders.
+              The upload area now behaves like a real browser control. It lets you select local media, preview it
+              immediately, and send it through the real L.I.O.N. detection route for annotated output.
             </p>
           </div>
 
@@ -374,3 +374,4 @@ export default async function Home() {
     </main>
   );
 }
+

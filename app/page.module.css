@@ -225,6 +225,14 @@
   box-shadow: 3px 3px 0 rgba(6, 18, 24, 0.88);
 }
 
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+}
+
+
 .heroSection {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
@@ -844,6 +852,62 @@
   margin-top: 1rem;
 }
 
+.controlStack {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.controlHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-family: var(--font-mono-lion);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.controlHeader strong {
+  font-size: 0.95rem;
+}
+
+.rangeInput {
+  width: 100%;
+  accent-color: var(--lion-coral);
+}
+
+.statusBanner {
+  margin-top: 1rem;
+  padding: 0.875rem 1rem;
+  border: 3px solid var(--lion-line);
+  border-radius: 22px;
+  box-shadow: 5px 5px 0 rgba(6, 18, 24, 0.78);
+  font-family: var(--font-mono-lion);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.statusIdle {
+  background: rgba(255, 248, 236, 0.92);
+}
+
+.statusRunning {
+  background: var(--lion-sun);
+}
+
+.statusSuccess {
+  background: rgba(132, 239, 224, 0.46);
+}
+
+.statusError {
+  background: rgba(255, 122, 79, 0.24);
+}
+
+
 .placeholderSurface {
   display: grid;
   min-height: 150px;
@@ -1145,5 +1209,7 @@
     transform: none;
   }
 }
+
+
 
 
