@@ -138,6 +138,7 @@ export default async function Home() {
             <a href="#species-map">Map</a>
             <a href="#analytics">Analytics</a>
             <a href="/model-analytics">Model Graphs</a>
+            <a href="/model-report">Model Report</a>
             <a href="#footer">Docs</a>
           </nav>
           <a className={styles.primaryButton} href="#live-lab">
