@@ -2,6 +2,7 @@ import styles from "./page.module.css";
 import { GalleryFrame } from "./components/gallery-frame";
 import { LiveLab } from "./components/live-lab";
 import { getLionMetrics } from "./lib/lion-data";
+import { SpeciesMapClient } from "./components/species-map-client";
 
 const architectureSteps = [
   {
@@ -113,6 +114,7 @@ export default async function Home() {
             <a href="#architecture">Architecture</a>
             <a href="#live-lab">Live Lab</a>
             <a href="#gallery">Gallery</a>
+            <a href="#species-map">Map</a>
             <a href="#analytics">Analytics</a>
             <a href="#footer">Docs</a>
           </nav>
@@ -271,6 +273,19 @@ export default async function Home() {
               </article>
             ))}
           </div>
+        </section>
+
+        <section className={styles.sectionBlock} id="species-map">
+          <div className={styles.sectionHeading}>
+            <p className={styles.eyebrow}>Global detections map</p>
+            <h2>Interactive invasive species points from the uploaded observation dataset.</h2>
+            <p>
+              Explore the CSV-driven map, hover points to identify the species, and zoom into clusters to inspect how
+              detections are distributed across the marine dataset.
+            </p>
+          </div>
+
+          <SpeciesMapClient csvPath="/media/invasive_marine_species_points (1).csv" />
         </section>
 
         <section className={`${styles.sectionBlock} ${styles.analyticsSection}`} id="analytics">

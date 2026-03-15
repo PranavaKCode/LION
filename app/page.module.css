@@ -734,6 +734,16 @@
   overflow: hidden;
 }
 
+.mapLoading {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  margin-top: 1.75rem;
+  font-family: var(--font-mono-lion);
+  font-size: 1rem;
+  text-transform: uppercase;
+}
+
 .galleryMediaPanel {
   position: relative;
   overflow: hidden;
