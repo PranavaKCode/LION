@@ -1,24 +1,38 @@
 # L.I.O.N. Web App
 
-Next.js homepage and live lab for the L.I.O.N. lionfish detection project.
+Next.js homepage and Live Lab for the L.I.O.N. lionfish detection project.
 
 ## What is in this repo
 
 - A long-scroll homepage styled around the L.I.O.N. Figma direction
 - A `Live Lab` upload flow in the Next.js app
-- A server route at `app/api/live-lab/detect/route.ts`
-- The real Python detection CLI in `lionfish_yolo.py`
+- A hosted inference route at `app/api/live-lab/detect/route.ts`
+- The original local Python CLI in `lionfish_yolo.py`
 
-The Live Lab route shells out to the Python detector during local development, runs hosted Roboflow inference, and returns annotated image or video output back into the web UI. The deployed serverless site keeps the upload UI in preview-only mode until inference is moved to a deployment-friendly backend.
+## How Live Lab works now
 
-## Requirements for Live Lab
+- Images are posted to the Next.js server route, which forwards them to Roboflow hosted inference.
+- Videos do not pass through the serverless host anymore.
+- The browser asks the server for a temporary Roboflow signed upload URL.
+- The browser uploads the video directly to Roboflow storage.
+- The server starts a Roboflow async video inference job.
+- The browser polls the job and renders returned detections as overlays on top of the uploaded media.
+
+This avoids trying to write annotated files to serverless disk and makes deployed video detection possible without a local Python runtime.
+
+## Requirements
 
 - Node.js for the Next.js app
-- Python `3.10` to `3.12`
 - A Roboflow API key in `ROBOFLOW_API_KEY`
-- Python dependencies from `pyproject.toml`
 
-The default `python` on this machine is Python `3.14`, which is not compatible with this detector setup. Point the app at a working Python `3.10` to `3.12` interpreter with `LIONFISH_PYTHON_BIN`.
+Optional model overrides:
+
+- `ROBOFLOW_WORKSPACE`
+- `ROBOFLOW_PROJECT`
+- `ROBOFLOW_MODEL_VERSION`
+- `ROBOFLOW_VIDEO_INFER_FPS`
+
+The Python environment is no longer required for the deployed Live Lab flow. It is only needed if you want to run the standalone local CLI manually.
 
 ## Setup
 
@@ -34,63 +48,32 @@ npm install
 copy .env.example .env.local
 ```
 
-3. Edit `.env.local` and set:
+3. Edit `.env.local` and set at least:
 
-- `ROBOFLOW_API_KEY`
-- `LIONFISH_PYTHON_BIN`
-
-4. Create a compatible Python environment and install the detector package:
-
-```bash
-py -3.11 -m venv .venv
-.venv\Scripts\activate
-python -m pip install --upgrade pip
-python -m pip install -e .
+```env
+ROBOFLOW_API_KEY=your_key_here
 ```
 
-5. Run the app:
+4. Run the app:
 
 ```bash
 npm run dev
 ```
 
-6. Open `http://localhost:3000` and use the `Live Lab` section to upload an image or video.
+5. Open `http://localhost:3000` and use the `Live Lab` section to upload an image or video.
 
 ## Environment variables
 
-- `ROBOFLOW_API_KEY`: required for hosted inference
-- `LIONFISH_PYTHON_BIN`: optional override for the Python executable used by the Next.js route
-
-Example:
-
 ```env
 ROBOFLOW_API_KEY=your_key_here
-LIONFISH_PYTHON_BIN=C:\Users\goodp\Downloads\picoctf\pizzaroutes\.venv\Scripts\python.exe
+ROBOFLOW_WORKSPACE=su-eaelw
+ROBOFLOW_PROJECT=lionfish-qs3tq
+ROBOFLOW_MODEL_VERSION=49
+ROBOFLOW_VIDEO_INFER_FPS=5
 ```
-
-## Detection flow
-
-1. The browser uploads a file to `POST /api/live-lab/detect`
-2. The server writes the upload to a temp directory
-3. The route runs:
-
-```bash
-python lionfish_yolo.py hosted-predict --preset lionfish --source <file> --output-root <public output dir>
-```
-
-4. The CLI writes:
-
-- annotated media
-- frame or image JSON
-- `last_run.json`
-
-5. The route reads those files and returns URLs and summary metrics to the UI
 
 ## Notes
 
-- Live Lab outputs are written under `public/live-lab-output/`
-- That folder is ignored in git
-- Analytics cards on the homepage still intentionally show `N/A` until evaluation exports are wired in
-- The deployed serverless app does not run the local Python detector yet; use local dev for real Live Lab inference
-
-
+- Analytics cards on the homepage still intentionally show `N/A` until evaluation exports are wired in.
+- The deployed app no longer depends on local Python or writable output folders for Live Lab video detection.
+- The local Python detector remains available separately through `lionfish_yolo.py` if you want offline CLI runs.

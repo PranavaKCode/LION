@@ -21,13 +21,13 @@ const architectureSteps = [
   },
   {
     step: "04",
-    title: "Rendered outputs",
-    description: "Annotated MP4 and image exports stay usable for quick qualitative assessment.",
+    title: "Browser review surface",
+    description: "The deployed app layers returned detections over uploaded media without writing files to serverless disk.",
   },
   {
     step: "05",
-    title: "JSON manifest + metrics",
-    description: "Frame-level metadata is available for stats, audits, and downstream analysis.",
+    title: "JSON manifests + metrics",
+    description: "Frame-level metadata can still feed audits, statistics, and downstream analysis.",
   },
 ] as const;
 
@@ -91,9 +91,9 @@ export default async function Home() {
               <span className={styles.heroAccent}>before they disappear into the reef.</span>
             </h1>
             <p className={styles.heroText}>
-              L.I.O.N. turns raw underwater footage into annotated detections, exported video, and run metadata that
-              scientists can review fast. The page leads like an actual field-ready web app, not a passive marketing
-              brochure.
+              L.I.O.N. turns raw underwater footage into hosted detections, browser overlays, and structured run metadata
+              that scientists can review fast. The page leads like an actual field-ready web app, not a passive
+              marketing brochure.
             </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#live-lab">
@@ -161,10 +161,11 @@ export default async function Home() {
         <section className={styles.sectionBlock} id="architecture">
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Program architecture</p>
-            <h2>From raw reef footage to decision-ready outputs.</h2>
+            <h2>From raw reef footage to decision-ready overlays.</h2>
             <p>
-              This mirrors the real repo workflow: upload footage, run hosted Roboflow inference, render annotated
-              output, and persist JSON manifests for review and downstream analysis.
+              This mirrors the real hosted workflow in the deployed app: prepare a secure upload, run Roboflow
+              inference, render browser overlays, and keep structured detection JSON ready for review and downstream
+              analysis.
             </p>
           </div>
           <div className={styles.pipelineRow}>
@@ -186,8 +187,9 @@ export default async function Home() {
             <p className={styles.eyebrow}>Live lab</p>
             <h2>A web-app-first upload and review zone.</h2>
             <p>
-              The upload area now behaves like a real browser control. It lets you select local media, preview it
-              immediately, and send it through the real L.I.O.N. detection route for annotated output.
+              The upload area now behaves like a deployed tool, not a mock. It previews local media immediately, sends
+              images through hosted inference, and uploads videos to a real remote detection job that comes back as
+              browser overlays.
             </p>
           </div>
 
@@ -199,8 +201,8 @@ export default async function Home() {
             <p className={styles.eyebrow}>Detection gallery</p>
             <h2>A dense footage wall for lots of object-detection examples.</h2>
             <p>
-              The gallery is now framed as real preview stills from the demo clip rather than invented sample data. It
-              stays visually rich without pretending the page already has live detection metadata attached.
+              The gallery is framed as real preview stills from the demo clip rather than invented sample data. It stays
+              visually rich without pretending the page already has live detection metadata attached.
             </p>
           </div>
 
@@ -318,7 +320,7 @@ export default async function Home() {
           <div className={styles.footerGrid}>
             <div className={`${styles.card} ${styles.footerCard}`}>
               <h3>Project</h3>
-              <p>Hosted lionfish detection for images and video with annotated exports.</p>
+              <p>Hosted lionfish detection for images and video with browser overlays and structured outputs.</p>
             </div>
             <div className={`${styles.card} ${styles.footerCard}`}>
               <h3>Outputs</h3>
@@ -374,4 +376,3 @@ export default async function Home() {
     </main>
   );
 }
-

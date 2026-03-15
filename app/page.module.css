@@ -603,6 +603,7 @@
   position: absolute;
   left: 1rem;
   bottom: 1rem;
+  z-index: 2;
   padding: 0.625rem 0.875rem;
   border: 3px solid var(--lion-line);
   border-radius: 999px;
@@ -612,6 +613,53 @@
   text-transform: uppercase;
 }
 
+.previewSubtag {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
+  padding: 0.5rem 0.75rem;
+  border: 3px solid var(--lion-line);
+  border-radius: 999px;
+  background: rgba(255, 248, 236, 0.92);
+  font-family: var(--font-mono-lion);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.monitorMedia {
+  object-fit: contain;
+}
+
+.detectionOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.detectionBox {
+  position: absolute;
+  border: 3px solid var(--lion-coral);
+  border-radius: 18px;
+  background: rgba(255, 122, 79, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(6, 18, 24, 0.18);
+}
+
+.detectionLabel {
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  max-width: min(180px, calc(100% - 0.5rem));
+  padding: 0.35rem 0.5rem;
+  border: 2px solid var(--lion-line);
+  border-radius: 14px;
+  background: rgba(255, 248, 236, 0.94);
+  font-family: var(--font-mono-lion);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
 .previewStats,
 .opsStack,
 .opsGrid,
@@ -1209,6 +1257,8 @@
     transform: none;
   }
 }
+
+
 
 
 

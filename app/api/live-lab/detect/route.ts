@@ -1,99 +1,87 @@
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { NextResponse } from "next/server";
-import type { LiveLabResult } from "../../../lib/live-lab-types";
+import { NextRequest, NextResponse } from "next/server";
+import type {
+  LiveLabApiResponse,
+  LiveLabCompleteResponse,
+  LiveLabPreparedUploadResponse,
+  LiveLabPrediction,
+  LiveLabQueuedResponse,
+  LiveLabResult,
+  LiveLabVideoFrame,
+} from "../../../lib/live-lab-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_CONFIDENCE = 0.25;
-const MAX_UPLOAD_BYTES = 40 * 1024 * 1024;
-
-type PredictionOutput = {
-  image?: string;
-  video?: string;
-  json?: string;
-};
-
-type ManifestPayload = {
-  hosted_model?: string;
-  prediction_outputs?: Record<string, PredictionOutput>;
-};
-
-type ImagePredictionPayload = {
-  predictions?: Array<{
-    confidence?: number | string;
-  }>;
-  image?: {
-    width?: number;
-    height?: number;
-  };
-};
-
-type VideoPredictionPayload = {
-  source?: string;
-  fps?: number;
-  width?: number;
-  height?: number;
-  frame_count?: number;
-  frames?: Array<{
-    predictions?: Array<{
-      confidence?: number | string;
-    }>;
-  }>;
-};
+const MAX_IMAGE_UPLOAD_BYTES = 40 * 1024 * 1024;
+const ROBOFLOW_DETECT_URL = "https://detect.roboflow.com";
+const ROBOFLOW_API_URL = "https://api.roboflow.com";
+const DEFAULT_MODEL_WORKSPACE = "su-eaelw";
+const DEFAULT_MODEL_PROJECT = "lionfish-qs3tq";
+const DEFAULT_MODEL_VERSION = 49;
+const DEFAULT_VIDEO_INFER_FPS = 5;
+const VIDEO_POLL_INTERVAL_MS = 10000;
 
 type ServerConfig = {
   apiKey?: string;
-  pythonCommand: string;
+  modelWorkspace: string;
+  modelProject: string;
+  modelVersion: number;
+  videoInferFps: number;
 };
 
-function isServerlessHost() {
-  return Boolean(
-    process.env.VERCEL ||
-      process.env.AWS_LAMBDA_FUNCTION_NAME ||
-      process.env.AWS_EXECUTION_ENV ||
-      process.env.LAMBDA_TASK_ROOT,
-  );
-}
+type RoboflowPrediction = {
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  height?: number | string;
+  confidence?: number | string;
+  class?: string;
+};
 
-function sanitizeFilename(name: string) {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
+type RoboflowImagePayload = {
+  predictions?: RoboflowPrediction[];
+  image?: {
+    width?: number | string;
+    height?: number | string;
+  };
+};
 
-function clampConfidence(value: number) {
-  if (!Number.isFinite(value)) {
-    return DEFAULT_CONFIDENCE;
-  }
+type RoboflowVideoJobPayload = {
+  job_id?: string;
+  output_signed_url?: string;
+  status?: number;
+  error?: string;
+  message?: string;
+};
 
-  return Math.min(0.95, Math.max(0.05, value));
-}
+type RoboflowVideoFramePayload = {
+  time?: number | string;
+  image?: {
+    width?: number | string;
+    height?: number | string;
+  };
+  predictions?: RoboflowPrediction[];
+};
 
-function formatMetric(value?: number, digits = 2) {
-  return Number.isFinite(value) ? value!.toFixed(digits) : "N/A";
-}
+type RoboflowVideoOutputPayload = {
+  frame_offset?: Array<number | string>;
+  time_offset?: Array<number | string>;
+  [key: string]: unknown;
+};
 
-function formatRuntime(totalSeconds?: number) {
-  if (!Number.isFinite(totalSeconds) || totalSeconds === undefined) {
-    return "N/A";
-  }
+type PrepareVideoUploadRequest = {
+  intent?: string;
+  fileName?: string;
+};
 
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds - minutes * 60;
-  return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
-}
-
-function toPublicUrl(absolutePath: string, publicDir: string) {
-  const relativePath = path.relative(publicDir, absolutePath);
-  if (!relativePath || relativePath.startsWith("..")) {
-    throw new Error(`Output path is outside the public directory: ${absolutePath}`);
-  }
-
-  return `/${relativePath.replace(/\\/g, "/")}`;
-}
+type StartVideoJobRequest = {
+  intent?: string;
+  inputUrl?: string;
+  sourceName?: string;
+};
 
 function parseEnvFile(raw: string) {
   const values: Record<string, string> = {};
@@ -125,18 +113,65 @@ function parseEnvFile(raw: string) {
   return values;
 }
 
+function clampConfidence(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_CONFIDENCE;
+  }
+
+  return Math.min(0.95, Math.max(0.05, value));
+}
+
+function toNumber(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+function formatMetric(value?: number, digits = 2) {
+  return Number.isFinite(value) ? value!.toFixed(digits) : "N/A";
+}
+
+function formatRuntime(totalSeconds?: number) {
+  if (!Number.isFinite(totalSeconds) || totalSeconds === undefined) {
+    return "N/A";
+  }
+
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
+}
+
+function buildModelDisplay(config: ServerConfig) {
+  return `${config.modelWorkspace}/${config.modelProject}/${config.modelVersion}`;
+}
+
+function sanitizeSourceName(value: string | null | undefined, fallback: string) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, 200) : fallback;
+}
+
+function normalizePrediction(prediction: RoboflowPrediction): LiveLabPrediction {
+  return {
+    className: String(prediction.class ?? "object"),
+    confidence: Number(prediction.confidence ?? 0),
+    x: Number(prediction.x ?? 0),
+    y: Number(prediction.y ?? 0),
+    width: Number(prediction.width ?? 0),
+    height: Number(prediction.height ?? 0),
+  };
+}
+
+function filterPredictions(predictions: LiveLabPrediction[], confidence: number) {
+  return predictions.filter((prediction) => prediction.confidence >= confidence);
+}
+
 async function resolveServerConfig(): Promise<ServerConfig> {
   const envFromProcess = {
     apiKey: process.env.ROBOFLOW_API_KEY,
-    pythonCommand: process.env.LIONFISH_PYTHON_BIN,
+    modelWorkspace: process.env.ROBOFLOW_WORKSPACE,
+    modelProject: process.env.ROBOFLOW_PROJECT,
+    modelVersion: process.env.ROBOFLOW_MODEL_VERSION,
+    videoInferFps: process.env.ROBOFLOW_VIDEO_INFER_FPS,
   };
-
-  if (envFromProcess.apiKey && envFromProcess.pythonCommand) {
-    return {
-      apiKey: envFromProcess.apiKey,
-      pythonCommand: envFromProcess.pythonCommand,
-    };
-  }
 
   const envFiles = [path.join(process.cwd(), ".env.local"), path.join(process.cwd(), ".env")];
   const envFromFiles: Record<string, string> = {};
@@ -151,160 +186,332 @@ async function resolveServerConfig(): Promise<ServerConfig> {
 
   return {
     apiKey: envFromProcess.apiKey || envFromFiles.ROBOFLOW_API_KEY,
-    pythonCommand: envFromProcess.pythonCommand || envFromFiles.LIONFISH_PYTHON_BIN || "python",
+    modelWorkspace: envFromProcess.modelWorkspace || envFromFiles.ROBOFLOW_WORKSPACE || DEFAULT_MODEL_WORKSPACE,
+    modelProject: envFromProcess.modelProject || envFromFiles.ROBOFLOW_PROJECT || DEFAULT_MODEL_PROJECT,
+    modelVersion:
+      toNumber(envFromProcess.modelVersion) ||
+      toNumber(envFromFiles.ROBOFLOW_MODEL_VERSION) ||
+      DEFAULT_MODEL_VERSION,
+    videoInferFps:
+      toNumber(envFromProcess.videoInferFps) ||
+      toNumber(envFromFiles.ROBOFLOW_VIDEO_INFER_FPS) ||
+      DEFAULT_VIDEO_INFER_FPS,
   };
 }
 
-function collectConfidences(payload: ImagePredictionPayload | VideoPredictionPayload | null) {
-  if (!payload) {
-    return [] as number[];
+async function fetchJson<T>(url: string, init: RequestInit, errorLabel: string): Promise<T> {
+  const response = await fetch(url, { ...init, cache: "no-store" });
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`${errorLabel}: ${details || response.statusText}`);
   }
 
-  if (Array.isArray((payload as VideoPredictionPayload).frames)) {
-    return ((payload as VideoPredictionPayload).frames ?? []).flatMap((frame) =>
-      (frame.predictions ?? [])
-        .map((prediction) => Number(prediction.confidence))
-        .filter((confidence) => Number.isFinite(confidence)),
-    );
-  }
-
-  return ((payload as ImagePredictionPayload).predictions ?? [])
-    .map((prediction) => Number(prediction.confidence))
-    .filter((confidence) => Number.isFinite(confidence));
+  return (await response.json()) as T;
 }
 
-function buildResult(options: {
-  manifest: ManifestPayload;
-  outputRecord: PredictionOutput;
-  payload: ImagePredictionPayload | VideoPredictionPayload | null;
-  manifestPath: string;
-  publicDir: string;
-}): LiveLabResult {
-  const { manifest, outputRecord, payload, manifestPath, publicDir } = options;
-  const annotatedPath = outputRecord.video ?? outputRecord.image;
-  if (!annotatedPath) {
-    throw new Error("The detection run completed without an image or video output.");
-  }
-
-  const confidences = collectConfidences(payload);
-  const isVideo = Boolean(outputRecord.video);
-  const videoPayload = payload as VideoPredictionPayload | null;
-  const imagePayload = payload as ImagePredictionPayload | null;
-  const fpsValue = isVideo ? videoPayload?.fps : undefined;
-  const frameCountValue = isVideo ? videoPayload?.frame_count : imagePayload ? 1 : undefined;
-  const averageConfidence = confidences.length
+function buildSummary(predictions: LiveLabPrediction[]) {
+  const confidences = predictions.map((prediction) => prediction.confidence).filter((value) => Number.isFinite(value));
+  const average = confidences.length
     ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length
-    : 0;
-  const maxConfidence = confidences.length ? Math.max(...confidences) : 0;
-  const resolutionWidth = isVideo ? videoPayload?.width : imagePayload?.image?.width;
-  const resolutionHeight = isVideo ? videoPayload?.height : imagePayload?.image?.height;
-  const sourceName = isVideo
-    ? path.basename(videoPayload?.source ?? annotatedPath)
-    : path.basename(annotatedPath);
+    : undefined;
+  const max = confidences.length ? Math.max(...confidences) : undefined;
 
   return {
-    annotatedKind: isVideo ? "video" : "image",
-    annotatedUrl: toPublicUrl(annotatedPath, publicDir),
-    jsonUrl: outputRecord.json ? toPublicUrl(outputRecord.json, publicDir) : null,
-    manifestUrl: toPublicUrl(manifestPath, publicDir),
-    model: manifest.hosted_model ?? "N/A",
-    sourceName,
-    detectionCount: String(confidences.length),
-    frameCount: Number.isFinite(frameCountValue) ? String(frameCountValue) : "N/A",
-    avgConfidence: formatMetric(averageConfidence),
-    maxConfidence: formatMetric(maxConfidence),
-    fps: formatMetric(fpsValue),
-    resolution:
-      Number.isFinite(resolutionWidth) && Number.isFinite(resolutionHeight)
-        ? `${resolutionWidth} x ${resolutionHeight}`
-        : "N/A",
-    runtime:
-      isVideo && Number.isFinite(frameCountValue) && Number.isFinite(fpsValue)
-        ? formatRuntime(frameCountValue! / fpsValue!)
-        : "N/A",
-    outputMode: outputRecord.json
-      ? `${isVideo ? "video" : "image"} + json`
-      : isVideo
-        ? "video only"
-        : "image only",
+    detectionCount: String(predictions.length),
+    avgConfidence: formatMetric(average),
+    maxConfidence: formatMetric(max),
   };
 }
 
-function runLionfishProcess(command: string, args: string[], config: ServerConfig) {
-  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        ...(config.apiKey ? { ROBOFLOW_API_KEY: config.apiKey } : {}),
-        LIONFISH_PYTHON_BIN: config.pythonCommand,
-      },
-      windowsHide: true,
-    });
+function buildImageResult(options: {
+  config: ServerConfig;
+  payload: RoboflowImagePayload;
+  confidence: number;
+  sourceName: string;
+}): LiveLabResult {
+  const { config, payload, confidence, sourceName } = options;
+  const predictions = filterPredictions((payload.predictions ?? []).map(normalizePrediction), confidence);
+  const summary = buildSummary(predictions);
+  const width = toNumber(payload.image?.width);
+  const height = toNumber(payload.image?.height);
 
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-
-    child.on("error", (error) => {
-      reject(error);
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-        return;
-      }
-
-      reject(new Error(stderr.trim() || stdout.trim() || `lionfish_yolo.py exited with code ${code}.`));
-    });
-  });
+  return {
+    annotatedKind: "image",
+    annotatedUrl: null,
+    jsonUrl: null,
+    manifestUrl: null,
+    model: buildModelDisplay(config),
+    sourceName,
+    detectionCount: summary.detectionCount,
+    frameCount: "1",
+    avgConfidence: summary.avgConfidence,
+    maxConfidence: summary.maxConfidence,
+    fps: "N/A",
+    resolution: Number.isFinite(width) && Number.isFinite(height) ? `${width} x ${height}` : "N/A",
+    runtime: "N/A",
+    outputMode: "remote image api + overlay",
+    overlay:
+      Number.isFinite(width) && Number.isFinite(height)
+        ? {
+            kind: "image",
+            width: width!,
+            height: height!,
+            predictions,
+          }
+        : null,
+  };
 }
 
-export async function POST(request: Request) {
-  const serverConfig = await resolveServerConfig();
+function buildVideoResult(options: {
+  config: ServerConfig;
+  payload: RoboflowVideoOutputPayload;
+  confidence: number;
+  sourceName: string;
+  jsonUrl: string | null;
+}): LiveLabResult {
+  const { config, payload, confidence, sourceName, jsonUrl } = options;
+  const frameOffsets = Array.isArray(payload.frame_offset) ? payload.frame_offset : [];
+  const timeOffsets = Array.isArray(payload.time_offset) ? payload.time_offset : [];
+  const modelKey =
+    Object.keys(payload).find((key) => key !== "frame_offset" && key !== "time_offset") ?? config.modelProject;
+  const rawFrames = Array.isArray(payload[modelKey]) ? (payload[modelKey] as RoboflowVideoFramePayload[]) : [];
 
-  if (isServerlessHost()) {
-    return NextResponse.json(
-      {
-        error:
-          "The deployed Live Lab is preview-only right now. This serverless host cannot run the local Python detection pipeline or persist annotated outputs. Run L.I.O.N. locally to process real uploads.",
-      },
-      { status: 501 },
-    );
+  const frames: LiveLabVideoFrame[] = rawFrames.map((framePayload, index) => ({
+    frame: toNumber(frameOffsets[index]) ?? index,
+    time: toNumber(timeOffsets[index]) ?? toNumber(framePayload.time) ?? index / config.videoInferFps,
+    predictions: filterPredictions((framePayload.predictions ?? []).map(normalizePrediction), confidence),
+  }));
+
+  const allPredictions = frames.flatMap((frame) => frame.predictions);
+  const summary = buildSummary(allPredictions);
+  const firstImage = rawFrames.find((framePayload) => framePayload.image)?.image;
+  const width = toNumber(firstImage?.width);
+  const height = toNumber(firstImage?.height);
+  const runtimeSeconds = frames.length ? Math.max(...frames.map((frame) => frame.time)) : undefined;
+
+  return {
+    annotatedKind: "video",
+    annotatedUrl: null,
+    jsonUrl,
+    manifestUrl: null,
+    model: buildModelDisplay(config),
+    sourceName,
+    detectionCount: summary.detectionCount,
+    frameCount: String(rawFrames.length),
+    avgConfidence: summary.avgConfidence,
+    maxConfidence: summary.maxConfidence,
+    fps: formatMetric(config.videoInferFps),
+    resolution: Number.isFinite(width) && Number.isFinite(height) ? `${width} x ${height}` : "N/A",
+    runtime: formatRuntime(runtimeSeconds),
+    outputMode: "remote video api + overlay",
+    overlay:
+      Number.isFinite(width) && Number.isFinite(height)
+        ? {
+            kind: "video",
+            width: width!,
+            height: height!,
+            sampleFps: config.videoInferFps,
+            frames,
+          }
+        : null,
+  };
+}
+
+async function requestVideoUploadUrl(fileName: string, config: ServerConfig): Promise<LiveLabPreparedUploadResponse> {
+  const signedUrlPayload = await fetchJson<{ signed_url: string }>(
+    `${ROBOFLOW_API_URL}/video_upload_signed_url?api_key=${encodeURIComponent(config.apiKey!)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file_name: fileName }),
+    },
+    "Error requesting Roboflow video upload URL",
+  );
+
+  return {
+    status: "upload-ready",
+    uploadUrl: signedUrlPayload.signed_url,
+    annotatedKind: "video",
+    model: buildModelDisplay(config),
+    sourceName: fileName,
+    message: "Secure upload URL ready. Upload the video directly to Roboflow storage.",
+  };
+}
+
+async function startVideoJob(options: {
+  config: ServerConfig;
+  inputUrl: string;
+  sourceName: string;
+}): Promise<LiveLabQueuedResponse> {
+  const { config, inputUrl, sourceName } = options;
+  const jobPayload = await fetchJson<RoboflowVideoJobPayload>(
+    `${ROBOFLOW_API_URL}/videoinfer/?api_key=${encodeURIComponent(config.apiKey!)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        input_url: inputUrl,
+        infer_fps: config.videoInferFps,
+        models: [
+          {
+            model_id: config.modelProject,
+            model_version: config.modelVersion,
+            inference_type: "object-detection",
+          },
+        ],
+      }),
+    },
+    "Error starting Roboflow video inference",
+  );
+
+  if (!jobPayload.job_id) {
+    throw new Error("Roboflow did not return a video job id.");
   }
 
-  if (!serverConfig.apiKey) {
+  return {
+    status: "queued",
+    jobId: jobPayload.job_id,
+    pollAfterMs: VIDEO_POLL_INTERVAL_MS,
+    annotatedKind: "video",
+    model: buildModelDisplay(config),
+    sourceName,
+    message: "Video uploaded. Roboflow is processing frames remotely.",
+  };
+}
+
+async function pollVideoJob(options: {
+  config: ServerConfig;
+  jobId: string;
+  confidence: number;
+  sourceName: string;
+}): Promise<LiveLabApiResponse> {
+  const { config, jobId, confidence, sourceName } = options;
+  const statusPayload = await fetchJson<RoboflowVideoJobPayload>(
+    `${ROBOFLOW_API_URL}/videoinfer/?api_key=${encodeURIComponent(config.apiKey!)}&job_id=${encodeURIComponent(jobId)}`,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    },
+    "Error polling Roboflow video inference",
+  );
+
+  if (typeof statusPayload.status !== "number" || statusPayload.status === 1) {
+    return {
+      status: "processing",
+      jobId,
+      pollAfterMs: VIDEO_POLL_INTERVAL_MS,
+      annotatedKind: "video",
+      model: buildModelDisplay(config),
+      sourceName,
+      message: "Remote video detection is still running. Checking again shortly.",
+    };
+  }
+
+  if (statusPayload.status > 1 || !statusPayload.output_signed_url) {
+    throw new Error(statusPayload.error || statusPayload.message || "Roboflow video inference failed.");
+  }
+
+  const outputPayload = await fetchJson<RoboflowVideoOutputPayload>(
+    statusPayload.output_signed_url,
+    {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    },
+    "Error downloading Roboflow video results",
+  );
+
+  const result = buildVideoResult({
+    config,
+    payload: outputPayload,
+    confidence,
+    sourceName,
+    jsonUrl: statusPayload.output_signed_url,
+  });
+
+  const response: LiveLabCompleteResponse = {
+    status: "complete",
+    message: "Remote video detection complete.",
+    result,
+  };
+
+  return response;
+}
+
+export async function GET(request: NextRequest) {
+  const config = await resolveServerConfig();
+  if (!config.apiKey) {
     return NextResponse.json(
       {
-        error:
-          "ROBOFLOW_API_KEY is not configured for the Next.js server. Add it to your environment or .env.local and restart the app.",
+        error: "ROBOFLOW_API_KEY is not configured for the Live Lab server route.",
       },
       { status: 500 },
     );
   }
 
+  const jobId = request.nextUrl.searchParams.get("jobId");
+  const confidence = clampConfidence(Number(request.nextUrl.searchParams.get("confidence") ?? DEFAULT_CONFIDENCE));
+  const sourceName = sanitizeSourceName(request.nextUrl.searchParams.get("sourceName"), "uploaded-video.mp4");
+
+  if (!jobId) {
+    return NextResponse.json({ error: "A Roboflow video job id is required." }, { status: 400 });
+  }
+
+  try {
+    const payload = await pollVideoJob({ config, jobId, confidence, sourceName });
+    return NextResponse.json(payload);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Live Lab video polling failed.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  const config = await resolveServerConfig();
+
+  if (!config.apiKey) {
+    return NextResponse.json(
+      {
+        error:
+          "ROBOFLOW_API_KEY is not configured for the Next.js server. Add it to your deployment environment or local env file and restart the app.",
+      },
+      { status: 500 },
+    );
+  }
+
+  const contentType = request.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    const body = (await request.json()) as PrepareVideoUploadRequest | StartVideoJobRequest;
+
+    try {
+      if (body.intent === "prepare-video-upload") {
+        const fileName = sanitizeSourceName((body as PrepareVideoUploadRequest).fileName, "uploaded-video.mp4");
+        return NextResponse.json(await requestVideoUploadUrl(fileName, config));
+      }
+
+      if (body.intent === "start-video-job") {
+        const inputUrl = (body as StartVideoJobRequest).inputUrl?.trim();
+        if (!inputUrl) {
+          return NextResponse.json({ error: "A Roboflow upload URL is required to start video inference." }, { status: 400 });
+        }
+
+        const sourceName = sanitizeSourceName((body as StartVideoJobRequest).sourceName, "uploaded-video.mp4");
+        return NextResponse.json(await startVideoJob({ config, inputUrl, sourceName }));
+      }
+
+      return NextResponse.json({ error: "Unsupported Live Lab request intent." }, { status: 400 });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Live Lab video setup failed.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
   const formData = await request.formData();
   const file = formData.get("file");
-  const requestedConfidence = Number(formData.get("confidence") ?? DEFAULT_CONFIDENCE);
-  const confidence = clampConfidence(requestedConfidence);
+  const confidence = clampConfidence(Number(formData.get("confidence") ?? DEFAULT_CONFIDENCE));
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Upload a file before running detection." }, { status: 400 });
-  }
-
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return NextResponse.json(
-      { error: "The uploaded file is too large for the live lab. Keep uploads under 40 MB." },
-      { status: 400 },
-    );
   }
 
   if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
@@ -314,69 +521,57 @@ export async function POST(request: Request) {
     );
   }
 
-  const jobId = randomUUID();
-  const publicDir = path.join(process.cwd(), "public");
-  const outputRoot = path.join(publicDir, "live-lab-output", jobId);
-  const tempRoot = path.join(os.tmpdir(), "lion-live-lab", jobId);
-  const uploadPath = path.join(tempRoot, sanitizeFilename(file.name || `upload-${jobId}`));
-
-  try {
-    await mkdir(outputRoot, { recursive: true });
-    await mkdir(tempRoot, { recursive: true });
-    await writeFile(uploadPath, Buffer.from(await file.arrayBuffer()));
-
-    await runLionfishProcess(
-      serverConfig.pythonCommand,
-      [
-        "lionfish_yolo.py",
-        "hosted-predict",
-        "--preset",
-        "lionfish",
-        "--source",
-        uploadPath,
-        "--output-root",
-        outputRoot,
-        "--run-name",
-        "result",
-        "--conf",
-        confidence.toFixed(2),
-      ],
-      serverConfig,
-    );
-
-    const manifestPath = path.join(outputRoot, "last_run.json");
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ManifestPayload;
-    const outputRecord = Object.values(manifest.prediction_outputs ?? {})[0];
-
-    if (!outputRecord) {
-      throw new Error("The detector did not produce an output record.");
-    }
-
-    let payload: ImagePredictionPayload | VideoPredictionPayload | null = null;
-    if (outputRecord.json) {
-      payload = JSON.parse(await readFile(outputRecord.json, "utf8")) as ImagePredictionPayload | VideoPredictionPayload;
-    }
-
-    return NextResponse.json(
-      buildResult({
-        manifest,
-        outputRecord,
-        payload,
-        manifestPath,
-        publicDir,
-      }),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Live lab inference failed.";
+  if (file.type.startsWith("video/")) {
     return NextResponse.json(
       {
-        error:
-          `${message} If Python is not ready, set LIONFISH_PYTHON_BIN to a working Python 3.10-3.12 environment and install the project dependencies there.`,
+        error: "Video uploads now use a direct browser-to-Roboflow transfer. Refresh the page and try the upload again.",
       },
-      { status: 500 },
+      { status: 400 },
     );
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
+  }
+
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    return NextResponse.json(
+      { error: "The uploaded image is too large for the live lab. Keep image uploads under 40 MB." },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const params = new URLSearchParams({
+      api_key: config.apiKey,
+      name: file.name || "upload-image.jpg",
+      overlap: "30",
+      confidence: String(Math.round(confidence * 100)),
+      stroke: "1",
+      labels: "false",
+      format: "json",
+    });
+
+    const imagePayload = await fetchJson<RoboflowImagePayload>(
+      `${ROBOFLOW_DETECT_URL}/${config.modelProject}/${config.modelVersion}?${params.toString()}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: Buffer.from(await file.arrayBuffer()).toString("base64"),
+      },
+      "Error running Roboflow image inference",
+    );
+
+    const response: LiveLabCompleteResponse = {
+      status: "complete",
+      message: "Remote image detection complete.",
+      result: buildImageResult({
+        config,
+        payload: imagePayload,
+        confidence,
+        sourceName: sanitizeSourceName(file.name, "uploaded-image.jpg"),
+      }),
+    };
+
+    return NextResponse.json(response);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Live Lab inference failed.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
