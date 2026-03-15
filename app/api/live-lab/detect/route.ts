@@ -489,7 +489,7 @@ async function fetchJson<T>(url: string, init: RequestInit, errorLabel: string):
 function normalizeAbsoluteServiceUrl(rawValue: string) {
   const trimmed = rawValue.trim();
   if (!trimmed) {
-    return null;
+    throw new Error("MARINE_DETECT_API_URL cannot be empty.");
   }
 
   const withProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
