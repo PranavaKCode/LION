@@ -2,7 +2,7 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --background: #03141e;
+  --background: #0a2a38;
   --foreground: #061218;
   --font-heading-lion: "Arial Black", "Franklin Gothic Heavy", "Trebuchet MS", sans-serif;
   --font-body-lion: "Trebuchet MS", "Segoe UI", sans-serif;
@@ -28,7 +28,9 @@ html,
 body {
   min-height: 100%;
   margin: 0;
-  background: var(--background);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(132, 239, 224, 0.22), transparent 30%),
+    linear-gradient(180deg, #0b3143 0%, var(--background) 100%);
   color: var(--foreground);
   font-family: var(--font-body-lion);
 }

@@ -1,8 +1,6 @@
-import type { CSSProperties } from "react";
 import Image from "next/image";
 import styles from "./page.module.css";
 import { LiveLab } from "./components/live-lab";
-import { UnderseaNetwork } from "./components/undersea-network";
 import { DETECTOR_OPTIONS, REEF_GALLERY_SPECIES, type GallerySpeciesCard } from "./lib/detector-config";
 import { getLionMetrics } from "./lib/lion-data";
 import { SpeciesMapClient } from "./components/species-map-client";
@@ -47,16 +45,16 @@ const galleryCards = [
   {
     title: "Sharks",
     subtitle: "Apex predator group",
-    imageSrc: "/media/Live_demo.gif",
-    imageNote: "Reference image pending",
+    imageSrc: "/media/shark.jpg",
+    imageNote: "Field reference",
     summary: "Top-down predators that stabilize reef food webs and suppress trophic imbalance.",
     tags: ["Ecosystem keystone", "Biodiversity stabilizer", "CO2 impact if depleted: Moderate-High"],
   },
   {
     title: "Sea Turtles",
     subtitle: "Cheloniidae / Dermochelyidae",
-    imageSrc: "/media/Live_demo.gif",
-    imageNote: "Reference image pending",
+    imageSrc: "/media/turtle.gif",
+    imageNote: "Field reference",
     summary: "Graze seagrass and algae, supporting nursery habitats tied to blue-carbon storage.",
     tags: ["Protected species", "Habitat maintainer", "Blue-carbon support: High"],
   },
@@ -86,10 +84,30 @@ const galleryCards = [
   },
 ] as const;
 
+const detectorLaneLabels = DETECTOR_OPTIONS.map((option) => option.shortLabel).join(" / ");
+const localSuiteLabel = process.env.MARINE_DETECT_API_URL ? "Remote service configured" : "Local fallback active";
+const mobileSpecies = REEF_GALLERY_SPECIES[0];
+
+function renderSpeciesMedia(species: GallerySpeciesCard, index: number) {
+  const mediaSrc = species.imageSrc ?? "/media/Live_demo.gif";
+
+  return (
+    <div className={styles.galleryMediaPanel} key={`${species.name}-${index}`}>
+      <img
+        className={styles.galleryImage}
+        src={mediaSrc}
+        alt={species.imageAlt ?? `${species.name} detection reference`}
+        loading="lazy"
+        decoding="async"
+      />
+      <span className={styles.previewTag}>{species.group}</span>
+    </div>
+  );
+}
+
 export default async function Home() {
   const metrics = await getLionMetrics();
   const videoSrc = "/media/lionfish-demo.mp4";
-  const liveDemoGifSrc = "/media/Live_demo.gif";
 
   return (
     <main className={styles.pageShell} id="top">
@@ -119,6 +137,7 @@ export default async function Home() {
             <a href="#gallery">Gallery</a>
             <a href="#species-map">Map</a>
             <a href="#analytics">Analytics</a>
+            <a href="/model-analytics">Model Graphs</a>
             <a href="#footer">Docs</a>
           </nav>
           <a className={styles.primaryButton} href="#live-lab">
@@ -177,13 +196,16 @@ export default async function Home() {
               <div className={`${styles.consoleChip} ${styles.consoleChipCoral}`}>Undersea HUD</div>
             </div>
             <div className={styles.heroMediaFrame}>
-              <Image
-                fill
-                unoptimized
+              <video
                 className={styles.fullVideo}
-                src={liveDemoGifSrc}
-                alt="Active reef monitoring feed"
-                sizes="(max-width: 980px) 100vw, 56vw"
+                src={videoSrc}
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="metadata"
+                poster="/media/live_demo.gif"
+                aria-label="Active reef monitoring feed"
               />
               <div className={styles.heroOverlayCards}>
                 <div className={styles.overlayCard}>
@@ -267,7 +289,13 @@ export default async function Home() {
             {galleryCards.map((card) => (
               <article key={card.title} className={`${styles.card} ${styles.galleryCard}`}>
                 <div className={styles.galleryMediaPanel}>
-                  <img className={styles.galleryImage} src={card.imageSrc} alt={`${card.title} detection reference`} />
+                  <img
+                    className={styles.galleryImage}
+                    src={card.imageSrc}
+                    alt={`${card.title} detection reference`}
+                    loading="lazy"
+                    decoding="async"
+                  />
                   <span className={styles.previewTag}>{card.imageNote}</span>
                 </div>
                 <div className={styles.galleryMeta}>
@@ -276,11 +304,11 @@ export default async function Home() {
                     <p>{card.subtitle}</p>
                     <p>{card.summary}</p>
                   </div>
-                  <p className={styles.galleryDescription}>{card.highlight}</p>
+                  <p className={styles.galleryDescription}>{card.tags.join(" • ")}</p>
                   <div className={styles.galleryTags}>
-                    <span className={styles.fileChip}>{card.badge}</span>
-                    <span className={styles.fileChip}>{card.imageSrc ? "reference asset" : "preview / N/A"}</span>
-                    <span className={styles.fileChip}>{card.imageSrc ? "gallery image" : "detector ready"}</span>
+                    {card.tags.map((tag) => (
+                      <span key={`${card.title}-${tag}`} className={styles.fileChip}>{tag}</span>
+                    ))}
                   </div>
                 </div>
               </article>
