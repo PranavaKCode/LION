@@ -418,17 +418,26 @@
 .consoleFooter {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto minmax(62px, 1fr);
   gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
 }
 
 .consoleMiniChip {
   display: grid;
   min-height: 62px;
   place-items: center;
-  padding: 0.625rem;
+  padding: 0.875rem 1rem;
   font-family: var(--font-mono-lion);
-  font-size: 0.75rem;
+  font-size: 1.05rem;
+  line-height: 1.55;
   text-align: center;
+}
+
+.consoleFooter > :last-child {
+  grid-column: 1 / -1;
+  min-height: 100%;
 }
 
 .sectionBlock {
@@ -725,6 +734,33 @@
   overflow: hidden;
 }
 
+.mapLoading {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  margin-top: 1.75rem;
+  font-family: var(--font-mono-lion);
+  font-size: 1rem;
+  text-transform: uppercase;
+}
+
+.galleryMediaPanel {
+  position: relative;
+  overflow: hidden;
+  min-height: 220px;
+  border: 4px solid var(--lion-line);
+  border-radius: 24px;
+  background: var(--lion-deep-reef);
+}
+
+.galleryImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+}
+
 .galleryMeta {
   display: flex;
   align-items: flex-start;
@@ -849,6 +885,49 @@
 
 .footerActions {
   gap: 0.875rem;
+}
+
+.waitlistCopy {
+  margin: 0.9rem 0 0;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: rgba(11, 24, 32, 0.82);
+}
+
+.waitlistForm {
+  display: grid;
+  gap: 0.7rem;
+  width: min(100%, 360px);
+}
+
+.waitlistLabel {
+  font-family: var(--font-mono-lion);
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.waitlistInput {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 3px solid var(--lion-line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 4px 4px 0 rgba(6, 18, 24, 0.7);
+  font-family: var(--font-mono-lion);
+  font-size: 0.95rem;
+}
+
+.waitlistInput:focus-visible {
+  outline: 3px solid var(--lion-aqua);
+  outline-offset: 2px;
+}
+
+.waitlistDisclaimer {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: rgba(11, 24, 32, 0.7);
 }
 
 .footerGrid {
@@ -1096,6 +1175,10 @@
   .consoleFooter,
   .footerActions {
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .waitlistForm {
+    width: 100%;
   }
 }
 

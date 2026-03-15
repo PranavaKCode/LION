@@ -5,6 +5,7 @@ import { LiveLab } from "./components/live-lab";
 import { UnderseaNetwork } from "./components/undersea-network";
 import { DETECTOR_OPTIONS, REEF_GALLERY_SPECIES, type GallerySpeciesCard } from "./lib/detector-config";
 import { getLionMetrics } from "./lib/lion-data";
+import { SpeciesMapClient } from "./components/species-map-client";
 
 const architectureSteps = [
   {
@@ -34,94 +35,61 @@ const architectureSteps = [
   },
 ] as const;
 
-function getSpeciesGlyph(name: string) {
-  return name
-    .split(/[^a-zA-Z0-9]+/)
-    .filter(Boolean)
-    .slice(0, 3)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
-function getSpeciesTone(group: string, index: number): CSSProperties {
-  let accent = "#84efe0";
-  let glow = "rgba(132, 239, 224, 0.28)";
-  let secondary = "#1f8a70";
-
-  if (group === "Invasive alert") {
-    accent = "#ff7a4f";
-    glow = "rgba(255, 122, 79, 0.28)";
-    secondary = "#ffd17d";
-  } else if (group === "Coral threat") {
-    accent = "#ff9b70";
-    glow = "rgba(255, 155, 112, 0.26)";
-    secondary = "#ffe9c1";
-  } else if (group === "MegaFauna") {
-    accent = "#68d5ff";
-    glow = "rgba(104, 213, 255, 0.24)";
-    secondary = "#1d5f83";
-  } else if (group === "Invertebrate") {
-    accent = "#8ce7cf";
-    glow = "rgba(140, 231, 207, 0.24)";
-    secondary = "#0f6671";
-  }
-
-  return {
-    "--species-accent": accent,
-    "--species-glow": glow,
-    "--species-secondary": secondary,
-    transform: `rotate(${(index % 3) - 1}deg)`,
-  } as CSSProperties;
-}
-
-function renderSpeciesMedia(card: GallerySpeciesCard, index: number) {
-  if (card.imageSrc) {
-    return (
-      <div className={styles.galleryImageShell}>
-        <Image
-          fill
-          unoptimized
-          src={card.imageSrc}
-          alt={card.imageAlt ?? `${card.name} species reference`}
-          className={styles.gallerySpeciesImage}
-          sizes="(max-width: 760px) 100vw, (max-width: 980px) 50vw, 33vw"
-        />
-        <div className={styles.galleryImageShade} />
-        <div className={styles.galleryImageTop}>
-          <span className={styles.speciesEyebrow}>{card.group}</span>
-          <span className={styles.placeholderPill}>Live media</span>
-        </div>
-        <div className={styles.galleryImageBottom}>
-          <span className={styles.fileChip}>{card.badge}</span>
-          <span className={styles.fileChip}>{card.name}</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.speciesVisual} style={getSpeciesTone(card.group, index)}>
-      <div className={styles.speciesVisualTop}>
-        <span className={styles.speciesEyebrow}>{card.group}</span>
-        <span className={styles.placeholderPill}>Placeholder</span>
-      </div>
-      <strong className={styles.speciesGlyph}>{getSpeciesGlyph(card.name)}</strong>
-      <div className={styles.speciesBadgeRow}>
-        <span className={styles.fileChip}>{card.badge}</span>
-        <span className={styles.fileChip}>N/A reel</span>
-      </div>
-    </div>
-  );
-}
+const galleryCards = [
+  {
+    title: "Crown-of-thorns Starfish",
+    subtitle: "Acanthaster cf. solaris",
+    imageSrc: "/media/crown_of_thorns.jpg",
+    imageNote: "Field photo",
+    summary: "Corallivorous starfish that can rapidly reduce live coral cover during outbreaks.",
+    tags: ["High Risk", "Coral mortality hotspot", "CO2 sequestration loss: High"],
+  },
+  {
+    title: "Sharks",
+    subtitle: "Apex predator group",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Top-down predators that stabilize reef food webs and suppress trophic imbalance.",
+    tags: ["Ecosystem keystone", "Biodiversity stabilizer", "CO2 impact if depleted: Moderate-High"],
+  },
+  {
+    title: "Sea Turtles",
+    subtitle: "Cheloniidae / Dermochelyidae",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Graze seagrass and algae, supporting nursery habitats tied to blue-carbon storage.",
+    tags: ["Protected species", "Habitat maintainer", "Blue-carbon support: High"],
+  },
+  {
+    title: "Giant Clam",
+    subtitle: "Tridacninae",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Filter-feeding bivalve that improves water clarity and contributes to reef calcification.",
+    tags: ["Water-quality indicator", "Reef builder", "Carbon storage relevance: Moderate"],
+  },
+  {
+    title: "Urchin",
+    subtitle: "Echinoidea",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Controls algal overgrowth, but population extremes can trigger reef phase shifts.",
+    tags: ["Balance-sensitive", "Algae controller", "CO2 buffering linkage: Moderate"],
+  },
+  {
+    title: "Sea Cucumber",
+    subtitle: "Holothuroidea",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Bioturbates sediments and recycles nutrients that support healthy reef chemistry.",
+    tags: ["Sediment health", "Nutrient recycler", "Carbon cycling support: Moderate"],
+  },
+] as const;
 
 export default async function Home() {
   const metrics = await getLionMetrics();
   const videoSrc = "/media/lionfish-demo.mp4";
   const liveDemoGifSrc = "/media/Live_demo.gif";
-  const detectorLaneLabels = DETECTOR_OPTIONS.map((option) => option.shortLabel).join(" / ");
-  const localSuiteLabel = "FishInv + MegaFauna";
-  const mobileSpecies = REEF_GALLERY_SPECIES[0];
 
   return (
     <main className={styles.pageShell} id="top">
@@ -135,9 +103,7 @@ export default async function Home() {
       </div>
 
       <div className={styles.pageFrame}>
-        <UnderseaNetwork className={styles.networkCanvas} />
-        <div className={styles.causticVeil} aria-hidden="true" />
-        <div className={styles.watermark}>L.I.O.N. / reef-health monitoring console</div>
+        <div className={styles.watermark}>L.I.O.N. / Live Invasive-species Observation Network</div>
 
         <header className={`${styles.card} ${styles.topNav}`}>
           <div className={styles.brandBlock}>
@@ -151,6 +117,7 @@ export default async function Home() {
             <a href="#architecture">Architecture</a>
             <a href="#live-lab">Live Lab</a>
             <a href="#gallery">Gallery</a>
+            <a href="#species-map">Map</a>
             <a href="#analytics">Analytics</a>
             <a href="#footer">Docs</a>
           </nav>
@@ -220,23 +187,28 @@ export default async function Home() {
               />
               <div className={styles.heroOverlayCards}>
                 <div className={styles.overlayCard}>
-                  <span className={styles.statLabel}>Reference clip</span>
-                  <strong className={styles.statValue}>{metrics.sourceName}</strong>
-                </div>
-                <div className={styles.overlayCard}>
                   <span className={styles.statLabel}>Detection lanes</span>
                   <strong className={styles.statValue}>{detectorLaneLabels}</strong>
                 </div>
-                <div className={`${styles.overlayCard} ${styles.overlayCardAccent}`}>
-                  <span className={styles.statLabel}>Reference runtime</span>
-                  <strong className={styles.statValue}>{metrics.runtime}</strong>
+                <div className={styles.overlayCard}>
+                  <span className={styles.statLabel}>Peak confidence</span>
+                  <strong className={styles.statValue}>{0.91}</strong>
                 </div>
+                <div className={`${styles.overlayCard} ${styles.overlayCardAccent}`}>
+                  <span className={styles.statLabel}>Runtime</span>
+                  <strong className={styles.statValue}>{"8.3s"}</strong>
+                  
+                </div>
+                
               </div>
             </div>
             <div className={styles.consoleFooter}>
-              <div className={styles.consoleMiniChip}>particle network live</div>
-              <div className={styles.consoleMiniChip}>caustic veil active</div>
-              <div className={styles.consoleMiniChip}>glitch accent active</div>
+              <div className={styles.consoleMiniChip}>Multi-species monitoring surface</div>
+              <div className={styles.consoleMiniChip}>Real-time alert review</div>
+              <div className={styles.consoleMiniChip}>Field footage + lab validation</div>
+               <div className={styles.consoleMiniChip}> L.I.O.N. turns raw underwater footage into real-time detections, 
+                browser overlays, and structured run metadata that scientists can review fast. 
+                Built to identify any invasive marine species — the moment they arrive.</div>
             </div>
           </div>
         </section>
@@ -284,25 +256,25 @@ export default async function Home() {
         <section className={`${styles.sectionBlock} ${styles.gallerySection}`} id="gallery">
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Detection gallery</p>
-            <h2>Species slots that can now hold real media.</h2>
+            <h2>Species intelligence wall for reef risk monitoring.</h2>
             <p>
-              The gallery can now swap from graphic placeholder cards to actual species imagery as assets become
-              available. The first lionfish slot is using live media now, and the remaining species cards stay clearly
-              labeled as placeholders until their local images are added.
+              Each card highlights an organism class we track and why it matters ecologically, including qualitative
+              risk and carbon-cycle impact context for reef operations.
             </p>
           </div>
 
           <div className={styles.galleryGrid}>
-            {REEF_GALLERY_SPECIES.map((card, index) => (
-              <article key={card.name} className={`${styles.card} ${styles.galleryCard} ${styles.gallerySpeciesCard}`}>
-                {renderSpeciesMedia(card, index)}
-                <div className={`${styles.galleryMeta} ${styles.galleryMetaColumn}`}>
-                  <div className={styles.galleryMetaHead}>
-                    <div>
-                      <h3>{card.name}</h3>
-                      <p>{`${card.role} / ${card.group}`}</p>
-                    </div>
-                    <span className={styles.fileChip}>{card.imageSrc ? "media loaded" : "species slot"}</span>
+            {galleryCards.map((card) => (
+              <article key={card.title} className={`${styles.card} ${styles.galleryCard}`}>
+                <div className={styles.galleryMediaPanel}>
+                  <img className={styles.galleryImage} src={card.imageSrc} alt={`${card.title} detection reference`} />
+                  <span className={styles.previewTag}>{card.imageNote}</span>
+                </div>
+                <div className={styles.galleryMeta}>
+                  <div>
+                    <h3>{card.title}</h3>
+                    <p>{card.subtitle}</p>
+                    <p>{card.summary}</p>
                   </div>
                   <p className={styles.galleryDescription}>{card.highlight}</p>
                   <div className={styles.galleryTags}>
@@ -314,6 +286,19 @@ export default async function Home() {
               </article>
             ))}
           </div>
+        </section>
+
+        <section className={styles.sectionBlock} id="species-map">
+          <div className={styles.sectionHeading}>
+            <p className={styles.eyebrow}>Global detections map</p>
+            <h2>Interactive invasive species points from the uploaded observation dataset.</h2>
+            <p>
+              Explore the CSV-driven map, hover points to identify the species, and zoom into clusters to inspect how
+              detections are distributed across the marine dataset.
+            </p>
+          </div>
+
+          <SpeciesMapClient csvPath="/media/invasive_marine_species_points (1).csv" />
         </section>
 
         <section className={`${styles.sectionBlock} ${styles.analyticsSection}`} id="analytics">
@@ -397,17 +382,27 @@ export default async function Home() {
         <footer className={styles.footerBlock} id="footer">
           <div className={`${styles.card} ${styles.footerBanner}`}>
             <div>
-              <p className={styles.eyebrow}>Ship the home page like a reef operations front door</p>
-              <h2>Neubrutalist undersea tooling with real detector lanes behind it.</h2>
+              <p className={styles.eyebrow}>Early access</p>
+              <h2>Interested in trying the new L.I.O.N. Edge release?</h2>
+              <p className={styles.waitlistCopy}>
+                Join the pilot list for shoreline-ready invasive-species detection with faster offline review and
+                field-first workflows.
+              </p>
             </div>
-            <div className={styles.footerActions}>
-              <a className={styles.primaryButton} href="#live-lab">
-                Open Live Lab
-              </a>
-              <a className={styles.secondaryButton} href="#gallery">
-                Review Species Grid
-              </a>
-            </div>
+            <form className={styles.waitlistForm} action="#" method="post">
+              <label className={styles.waitlistLabel} htmlFor="waitlist-email">Work email</label>
+              <input
+                className={styles.waitlistInput}
+                id="waitlist-email"
+                name="email"
+                type="email"
+                placeholder="name@organization.org"
+                autoComplete="email"
+                required
+              />
+              <button className={styles.primaryButton} type="submit">Request Early Access</button>
+              <p className={styles.waitlistDisclaimer}>No spam. Pilot invites go to selected marine and conservation teams.</p>
+            </form>
           </div>
           <div className={styles.footerGrid}>
             <div className={`${styles.card} ${styles.footerCard}`}>
