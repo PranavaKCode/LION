@@ -1,7 +1,7 @@
 import Image from "next/image";
 import styles from "./page.module.css";
 import { LiveLab } from "./components/live-lab";
-import { DETECTOR_OPTIONS, REEF_GALLERY_SPECIES, type GallerySpeciesCard } from "./lib/detector-config";
+import { DETECTOR_OPTIONS } from "./lib/detector-config";
 import { getLionMetrics } from "./lib/lion-data";
 import { SpeciesMapClient } from "./components/species-map-client";
 
@@ -9,17 +9,18 @@ const architectureSteps = [
   {
     step: "01",
     title: "Image / video intake",
-    description: "On A Boat, streaming live from a reef, or in the lab with pre-recorded footage. Drop it in. ",
+    description: "On a boat, streaming live from a reef, or in the lab with pre-recorded footage. Drop it in.",
   },
   {
     step: "02",
     title: "Hosted Roboflow detector",
-    description: "A call is made to our hosted AI model, so each invasive species is detected.",
+    description: "A call is made to the hosted model lane so each target species can be surfaced quickly.",
   },
   {
     step: "03",
     title: "Hosted or service inference",
-    description: "Hosted Roboflow lanes stay deployment-friendly, while the paired reef-health suite can run through a remote Python service or a local fallback.",
+    description:
+      "Hosted lanes stay deployment-friendly, while the paired Reef Health Suite can run through a remote Python service or a local fallback.",
   },
   {
     step: "04",
@@ -33,74 +34,172 @@ const architectureSteps = [
   },
 ] as const;
 
+type GalleryCard = {
+  title: string;
+  subtitle: string;
+  detectorFamily: string;
+  imageSrc: string;
+  imageNote: string;
+  summary: string;
+  highlight: string;
+  tags: readonly string[];
+};
+
 const galleryCards = [
   {
-    title: "Crown-of-thorns Starfish",
+    title: "Crown of Thorns Starfish",
     subtitle: "Acanthaster cf. solaris",
-    imageSrc: "/media/crown_of_thorns.jpg",
-    imageNote: "Field photo",
-    summary: "Corallivorous starfish that can rapidly reduce live coral cover during outbreaks.",
-    tags: ["High Risk", "Coral mortality hotspot", "CO2 sequestration loss: High"],
+    detectorFamily: "Hosted COTS lane",
+    imageSrc: "/media/crown_of_thorns_pred.png",
+    imageNote: "Predicted sample",
+    summary: "Hosted crown-of-thorns output ready for coral-risk review instead of a generic field-photo placeholder.",
+    highlight: "Outbreaks can strip live coral cover quickly, so this lane stays tuned for early intervention.",
+    tags: ["Coral threat", "Pred image", "Rapid response"],
   },
   {
-    title: "Sharks",
-    subtitle: "Apex predator group",
-    imageSrc: "/media/shark.jpg",
-    imageNote: "Field reference",
-    summary: "Top-down predators that stabilize reef food webs and suppress trophic imbalance.",
-    tags: ["Ecosystem keystone", "Biodiversity stabilizer", "CO2 impact if depleted: Moderate-High"],
+    title: "Parrotfish (Scaridae)",
+    subtitle: "Scaridae",
+    detectorFamily: "Fish + Invertebrates",
+    imageSrc: "/media/parrotfish_scaridae_pred.png",
+    imageNote: "Predicted sample",
+    summary: "Rendered with the family label the model actually predicts so the gallery stays scientifically clear.",
+    highlight: "Grazers like parrotfish help suppress algal overgrowth and support coral resilience.",
+    tags: ["Bio-indicator", "Scaridae", "Reef grazer"],
   },
   {
-    title: "Sea Turtles",
-    subtitle: "Cheloniidae / Dermochelyidae",
-    imageSrc: "/media/turtle.gif",
-    imageNote: "Field reference",
-    summary: "Graze seagrass and algae, supporting nursery habitats tied to blue-carbon storage.",
-    tags: ["Protected species", "Habitat maintainer", "Blue-carbon support: High"],
+    title: "Grouper (Serranidae)",
+    subtitle: "Serranidae",
+    detectorFamily: "Fish + Invertebrates",
+    imageSrc: "/media/grouper_serranidae_pred.png",
+    imageNote: "Predicted sample",
+    summary: "A reef-suite predator class surfaced as Serranidae so the UI matches the model output users will actually see.",
+    highlight: "Groupers help contextualize predatory balance across the reef food web.",
+    tags: ["Bio-indicator", "Serranidae", "Predator balance"],
   },
   {
-    title: "Giant Clam",
-    subtitle: "Tridacninae",
-    imageSrc: "/media/Live_demo.gif",
-    imageNote: "Reference image pending",
-    summary: "Filter-feeding bivalve that improves water clarity and contributes to reef calcification.",
-    tags: ["Water-quality indicator", "Reef builder", "Carbon storage relevance: Moderate"],
+    title: "Snapper (Lutjanidae)",
+    subtitle: "Lutjanidae",
+    detectorFamily: "Fish + Invertebrates",
+    imageSrc: "/media/snapper_lutjanidae_pred.png",
+    imageNote: "Predicted sample",
+    summary: "This gallery slot now uses the detected family label instead of a looser common-name placeholder.",
+    highlight: "Snappers are a dependable Indo-Pacific indicator class for routine reef-health surveys.",
+    tags: ["Bio-indicator", "Lutjanidae", "Schooling reef fish"],
   },
   {
     title: "Urchin",
     subtitle: "Echinoidea",
-    imageSrc: "/media/Live_demo.gif",
-    imageNote: "Reference image pending",
-    summary: "Controls algal overgrowth, but population extremes can trigger reef phase shifts.",
-    tags: ["Balance-sensitive", "Algae controller", "CO2 buffering linkage: Moderate"],
+    detectorFamily: "Fish + Invertebrates",
+    imageSrc: "/media/urchin_pred.png",
+    imageNote: "Predicted sample",
+    summary: "Real prediction imagery replaces the old filler so this card now reflects the actual invertebrate lane.",
+    highlight: "Urchin density can hint at grazing pressure, algal shifts, and broader benthic imbalance.",
+    tags: ["Invertebrate", "Reef balance", "Algae controller"],
   },
   {
     title: "Sea Cucumber",
     subtitle: "Holothuroidea",
-    imageSrc: "/media/Live_demo.gif",
-    imageNote: "Reference image pending",
-    summary: "Bioturbates sediments and recycles nutrients that support healthy reef chemistry.",
-    tags: ["Sediment health", "Nutrient recycler", "Carbon cycling support: Moderate"],
+    detectorFamily: "Fish + Invertebrates",
+    imageSrc: "/media/sea_cucumber_pred.png",
+    imageNote: "Predicted sample",
+    summary: "A seabed-health indicator card anchored to an actual predicted example from the current suite.",
+    highlight: "Sea cucumbers recycle nutrients and surface sediment-health signals that matter for reef chemistry.",
+    tags: ["Invertebrate", "Seafloor health", "Nutrient recycler"],
+  },
+  {
+    title: "Lobster",
+    subtitle: "Palinuridae",
+    detectorFamily: "Fish + Invertebrates",
+    imageSrc: "/media/lobster_pred.png",
+    imageNote: "Predicted sample",
+    summary: "The crustacean lane now shows a real model output rather than a placeholder thumbnail.",
+    highlight: "Lobster sightings add useful context around habitat complexity and shelter quality.",
+    tags: ["Invertebrate", "Rare find", "Habitat complexity"],
+  },
+  {
+    title: "Sea Turtle",
+    subtitle: "Cheloniidae",
+    detectorFamily: "MegaFauna + Rare Species",
+    imageSrc: "/media/sea_turtle_pred.png",
+    imageNote: "Predicted sample",
+    summary: "A real megafauna prediction frame now stands in for the old repeated demo asset.",
+    highlight: "Sea turtle sightings help connect reef monitoring with larger ecosystem-health signals.",
+    tags: ["MegaFauna", "Protected species", "Blue-carbon support"],
+  },
+  {
+    title: "Shark",
+    subtitle: "Selachimorpha",
+    detectorFamily: "MegaFauna + Rare Species",
+    imageSrc: "/media/shark_pred.png",
+    imageNote: "Predicted sample",
+    summary: "This apex-predator card now uses the provided prediction image instead of a repeated hero loop.",
+    highlight: "Shark detections help frame top-down predator stability and protection success.",
+    tags: ["MegaFauna", "Top predator", "Reef stability"],
+  },
+  {
+    title: "Lionfish",
+    subtitle: "Pterois volitans / miles",
+    detectorFamily: "Hosted lionfish lane",
+    imageSrc: "/media/lionfish_gallery_pred.jpg",
+    imageNote: "Predicted still",
+    summary: "This slot now uses a separate still from the lionfish prediction video so the gallery does not repeat the hero monitor.",
+    highlight: "Lionfish stays in the wall as the dedicated invasive-species watch for early removal and spread prevention.",
+    tags: ["Invasive alert", "Pred image", "Rapid removal"],
+  },
+] as const satisfies readonly GalleryCard[];
+
+const detectableSpeciesFamilies = [
+  {
+    title: "MegaFauna and Rare Species",
+    items: ["Sharks", "Sea Turtles", "Rays"],
+    note: "Rare-fauna sightings broaden the reef-health picture beyond the invasive-species watch.",
+  },
+  {
+    title: "Fish Species",
+    items: [
+      "Butterfly Fish (Chaetodontidae)",
+      "Grouper (Serranidae)",
+      "Parrotfish (Scaridae)",
+      "Snapper (Lutjanidae)",
+      "Moray Eel (Muraenidae)",
+      "Sweet Lips (Haemulidae)",
+      "Barramundi Cod (Cromileptes altivelis)",
+      "Humphead (Napoleon) Wrasse (Cheilinus undulatus)",
+      "Bumphead Parrotfish (Bolbometopon muricatum)",
+      "Fish (other than above or unrecognizable)",
+    ],
+    note: "These fish classes anchor the broader Indo-Pacific bio-indicator sweep inside the Reef Health Suite.",
+  },
+  {
+    title: "Invertebrates Species",
+    items: ["Giant Clam", "Urchin", "Sea Cucumber", "Lobster", "Crown of Thorns"],
+    note: "These invertebrate lanes help surface coral pressure, seabed health, and habitat complexity.",
+  },
+  {
+    title: "Lionfish",
+    items: ["Lionfish"],
+    note: "The invasive-species watch remains its own lane for faster review, removal, and response planning.",
   },
 ] as const;
 
-const detectorLaneLabels = DETECTOR_OPTIONS.map((option) => option.shortLabel).join(" / ");
-const localSuiteLabel = process.env.MARINE_DETECT_API_URL ? "Remote service configured" : "Local fallback active";
-const mobileSpecies = REEF_GALLERY_SPECIES[0];
-
-function renderSpeciesMedia(species: GallerySpeciesCard, index: number) {
-  const mediaSrc = species.imageSrc ?? "/media/Live_demo.gif";
-
+function renderSpeciesMedia(card: GalleryCard) {
   return (
-    <div className={styles.galleryMediaPanel} key={`${species.name}-${index}`}>
-      <img
-        className={styles.galleryImage}
-        src={mediaSrc}
-        alt={species.imageAlt ?? `${species.name} detection reference`}
-        loading="lazy"
-        decoding="async"
+    <div className={styles.galleryImageShell}>
+      <Image
+        fill
+        className={styles.gallerySpeciesImage}
+        src={card.imageSrc}
+        alt={`${card.title} prediction preview`}
+        sizes="(max-width: 640px) 100vw, 460px"
       />
-      <span className={styles.previewTag}>{species.group}</span>
+      <div className={styles.galleryImageShade} />
+      <div className={styles.galleryImageTop}>
+        <span className={styles.fileChip}>{card.detectorFamily}</span>
+        <span className={styles.previewTag}>{card.imageNote}</span>
+      </div>
+      <div className={styles.galleryImageBottom}>
+        <span className={styles.consoleMiniChip}>{card.title}</span>
+      </div>
     </div>
   );
 }
@@ -108,6 +207,11 @@ function renderSpeciesMedia(species: GallerySpeciesCard, index: number) {
 export default async function Home() {
   const metrics = await getLionMetrics();
   const videoSrc = "/media/lionfish-demo.mp4";
+  const liveDemoGifSrc = "/media/Live_demo.gif";
+  const detectorLaneLabels = DETECTOR_OPTIONS.map((option) => option.shortLabel).join(" / ");
+  const localSuiteLabel = process.env.MARINE_DETECT_API_URL ? "Remote reef-health service linked" : "Remote service configurable";
+  const mobileSpecies = galleryCards[0];
+  const gallerySpeciesCount = galleryCards.length;
 
   return (
     <main className={styles.pageShell} id="top">
@@ -150,10 +254,14 @@ export default async function Home() {
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>Undersea reef-health control room</p>
             <h1 className={styles.heroTitle}>
-              Track reef health, invasive outbreak
+              Track reef health, invasive outbreaks, and indicator species
               <span className={styles.heroAccent}>from one living marine dashboard.</span>
             </h1>
-        
+            <p className={styles.heroText}>
+              L.I.O.N. now routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
+              crown-of-thorns watch, and a marine-detect-style Reef Health Suite that can run through a remote Python
+              service or a local fallback using your FishInv and MegaFauna models.
+            </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#live-lab">
                 Open Live Lab
@@ -177,7 +285,7 @@ export default async function Home() {
               </div>
               <div className={styles.statCard}>
                 <span className={styles.statLabel}>Species slots</span>
-                <strong className={styles.statValue}>{String(REEF_GALLERY_SPECIES.length)}</strong>
+                <strong className={styles.statValue}>{String(gallerySpeciesCount)}</strong>
               </div>
             </div>
           </div>
@@ -201,7 +309,7 @@ export default async function Home() {
                 muted
                 playsInline
                 preload="metadata"
-                poster="/media/live_demo.gif"
+                poster={liveDemoGifSrc}
                 aria-label="Active reef monitoring feed"
               />
               <div className={styles.heroOverlayCards}>
@@ -211,30 +319,19 @@ export default async function Home() {
                 </div>
                 <div className={styles.overlayCard}>
                   <span className={styles.statLabel}>Peak confidence</span>
-                  <strong className={styles.statValue}>{0.91}</strong>
+                  <strong className={styles.statValue}>0.91</strong>
                 </div>
                 <div className={`${styles.overlayCard} ${styles.overlayCardAccent}`}>
                   <span className={styles.statLabel}>Runtime</span>
-                  <strong className={styles.statValue}>{"8.3s"}</strong>
-                  
+                  <strong className={styles.statValue}>8.3s</strong>
                 </div>
-                
               </div>
             </div>
             <div className={styles.consoleFooter}>
               <div className={styles.consoleMiniChip}>Multi-species monitoring surface</div>
               <div className={styles.consoleMiniChip}>Real-time alert review</div>
               <div className={styles.consoleMiniChip}>Field footage + lab validation</div>
-               <div className={styles.consoleMiniChip}>
-                L.I.O.N. turns raw underwater footage into real-time detections, browser overlays, and structured run
-                metadata that scientists can review fast. Built to identify any invasive marine species - the moment
-                they arrive.
-                <br />
-                <br />
-                L.I.O.N. now routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
-                crown-of-thorns watch, and a marine-detect-style Reef Health Suite that can run through a remote
-                Python service or a local fallback using your FishInv and MegaFauna models.
-                </div>
+              <div className={styles.consoleMiniChip}>Structured run metadata</div>
             </div>
           </div>
         </section>
@@ -257,9 +354,7 @@ export default async function Home() {
                   <h3>{item.title}</h3>
                   <p>{item.description}</p>
                 </article>
-                {index < architectureSteps.length - 1 ? (
-                  <div className={styles.pipelineArrow}>{">" }</div>
-                ) : null}
+                {index < architectureSteps.length - 1 ? <div className={styles.pipelineArrow}>{">"}</div> : null}
               </div>
             ))}
           </div>
@@ -284,8 +379,8 @@ export default async function Home() {
             <p className={styles.eyebrow}>Detection gallery</p>
             <h2>Species intelligence wall for reef risk monitoring.</h2>
             <p>
-              Each card highlights an organism class we track and why it matters ecologically, including qualitative
-              risk and carbon-cycle impact context for reef operations.
+              These slots now use actual prediction captures you supplied. Species without gallery media were removed
+              from the visual wall and moved into the coverage list below so the site stays honest about what is shown.
             </p>
           </div>
 
@@ -293,12 +388,12 @@ export default async function Home() {
             {galleryCards.map((card) => (
               <article key={card.title} className={`${styles.card} ${styles.galleryCard}`}>
                 <div className={styles.galleryMediaPanel}>
-                  <img
+                  <Image
+                    fill
                     className={styles.galleryImage}
                     src={card.imageSrc}
                     alt={`${card.title} detection reference`}
-                    loading="lazy"
-                    decoding="async"
+                    sizes="(max-width: 1280px) 50vw, 33vw"
                   />
                   <span className={styles.previewTag}>{card.imageNote}</span>
                 </div>
@@ -308,16 +403,38 @@ export default async function Home() {
                     <p>{card.subtitle}</p>
                     <p>{card.summary}</p>
                   </div>
-                  <p className={styles.galleryDescription}>{card.tags.join(" • ")}</p>
+                  <p className={styles.galleryDescription}>{card.highlight}</p>
                   <div className={styles.galleryTags}>
+                    <span className={styles.fileChip}>{card.detectorFamily}</span>
                     {card.tags.map((tag) => (
-                      <span key={`${card.title}-${tag}`} className={styles.fileChip}>{tag}</span>
+                      <span key={`${card.title}-${tag}`} className={styles.fileChip}>
+                        {tag}
+                      </span>
                     ))}
                   </div>
                 </div>
               </article>
             ))}
           </div>
+
+          <div className={styles.coverageGrid}>
+            {detectableSpeciesFamilies.map((family) => (
+              <article key={family.title} className={`${styles.card} ${styles.coverageCard}`}>
+                <p className={styles.cardTopline}>{family.title}</p>
+                <ul className={styles.coverageList}>
+                  {family.items.map((item) => (
+                    <li key={`${family.title}-${item}`}>{item}</li>
+                  ))}
+                </ul>
+                <p className={styles.coverageNote}>{family.note}</p>
+              </article>
+            ))}
+          </div>
+
+          <p className={styles.coverageOutro}>
+            The visual wall stays scoped to the real supplied prediction assets above, while the detection stack covers
+            the full species families listed here and much more as the reef-health suite expands.
+          </p>
         </section>
 
         <section className={styles.sectionBlock} id="species-map">
@@ -422,7 +539,9 @@ export default async function Home() {
               </p>
             </div>
             <form className={styles.waitlistForm} action="#" method="post">
-              <label className={styles.waitlistLabel} htmlFor="waitlist-email">Work email</label>
+              <label className={styles.waitlistLabel} htmlFor="waitlist-email">
+                Work email
+              </label>
               <input
                 className={styles.waitlistInput}
                 id="waitlist-email"
@@ -432,7 +551,9 @@ export default async function Home() {
                 autoComplete="email"
                 required
               />
-              <button className={styles.primaryButton} type="submit">Request Early Access</button>
+              <button className={styles.primaryButton} type="submit">
+                Request Early Access
+              </button>
               <p className={styles.waitlistDisclaimer}>No spam. Pilot invites go to selected marine and conservation teams.</p>
             </form>
           </div>
@@ -460,7 +581,7 @@ export default async function Home() {
         </div>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
           <span>Species slots</span>
-          <strong>{String(REEF_GALLERY_SPECIES.length)}</strong>
+          <strong>{String(gallerySpeciesCount)}</strong>
         </div>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
           <span>Reference run</span>
@@ -471,7 +592,7 @@ export default async function Home() {
       <section className={styles.mobileOnlySummary}>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
           <p className={styles.cardTopline}>Species slot</p>
-          {renderSpeciesMedia(mobileSpecies, 0)}
+          {renderSpeciesMedia(mobileSpecies)}
           <p className={styles.mobileCaption}>{mobileSpecies.highlight}</p>
         </article>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
