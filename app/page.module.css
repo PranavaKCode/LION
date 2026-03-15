@@ -877,6 +877,49 @@
   gap: 0.875rem;
 }
 
+.waitlistCopy {
+  margin: 0.9rem 0 0;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: rgba(11, 24, 32, 0.82);
+}
+
+.waitlistForm {
+  display: grid;
+  gap: 0.7rem;
+  width: min(100%, 360px);
+}
+
+.waitlistLabel {
+  font-family: var(--font-mono-lion);
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.waitlistInput {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border: 3px solid var(--lion-line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 4px 4px 0 rgba(6, 18, 24, 0.7);
+  font-family: var(--font-mono-lion);
+  font-size: 0.95rem;
+}
+
+.waitlistInput:focus-visible {
+  outline: 3px solid var(--lion-aqua);
+  outline-offset: 2px;
+}
+
+.waitlistDisclaimer {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: rgba(11, 24, 32, 0.7);
+}
+
 .footerGrid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
@@ -1122,6 +1165,10 @@
   .consoleFooter,
   .footerActions {
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .waitlistForm {
+    width: 100%;
   }
 }
 

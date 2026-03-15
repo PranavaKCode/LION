@@ -354,13 +354,27 @@ export default async function Home() {
         <footer className={styles.footerBlock} id="footer">
           <div className={`${styles.card} ${styles.footerBanner}`}>
             <div>
-              <p className={styles.eyebrow}>Ship the home page like an application front door</p>
-              <h2>Neubrutal reefs, clear tooling, and enough atmosphere to feel alive.</h2>
+              <p className={styles.eyebrow}>Early access</p>
+              <h2>Interested in trying the new L.I.O.N. Edge release?</h2>
+              <p className={styles.waitlistCopy}>
+                Join the pilot list for shoreline-ready invasive-species detection with faster offline review and
+                field-first workflows.
+              </p>
             </div>
-            <div className={styles.footerActions}>
-              <a className={styles.primaryButton} href="#live-lab">Open Live Lab</a>
-              <a className={styles.secondaryButton} href="#gallery">Review Gallery</a>
-            </div>
+            <form className={styles.waitlistForm} action="#" method="post">
+              <label className={styles.waitlistLabel} htmlFor="waitlist-email">Work email</label>
+              <input
+                className={styles.waitlistInput}
+                id="waitlist-email"
+                name="email"
+                type="email"
+                placeholder="name@organization.org"
+                autoComplete="email"
+                required
+              />
+              <button className={styles.primaryButton} type="submit">Request Early Access</button>
+              <p className={styles.waitlistDisclaimer}>No spam. Pilot invites go to selected marine and conservation teams.</p>
+            </form>
           </div>
           <div className={styles.footerGrid}>
             <div className={`${styles.card} ${styles.footerCard}`}>
