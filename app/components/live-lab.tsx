@@ -28,25 +28,45 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewKind, setPreviewKind] = useState<PreviewKind>("video");
 
   useEffect(() => {
-    if (!selectedFile) {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  function clearSelection() {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    setSelectedFile(null);
+    setPreviewUrl(null);
+
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  }
+
+  function handleFileChange(file: File | null) {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+
+    if (!file) {
+      setSelectedFile(null);
       setPreviewUrl(null);
-      setPreviewKind("video");
       return;
     }
 
-    const nextPreviewUrl = URL.createObjectURL(selectedFile);
-    setPreviewUrl(nextPreviewUrl);
-    setPreviewKind(selectedFile.type.startsWith("image/") ? "image" : "video");
-
-    return () => {
-      URL.revokeObjectURL(nextPreviewUrl);
-    };
-  }, [selectedFile]);
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+  }
 
   const previewSrc = previewUrl ?? defaultVideoSrc;
+  const previewKind: PreviewKind = selectedFile?.type.startsWith("image/") ? "image" : "video";
   const selectedSource = selectedFile?.name ?? metrics.sourceName;
   const selectedType = selectedFile?.type || (selectedFile ? "N/A" : "video/mp4");
   const selectedSize = selectedFile ? formatBytes(selectedFile.size) : "N/A";
@@ -68,7 +88,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
           type="file"
           accept="video/*,image/*"
           onChange={(event) => {
-            setSelectedFile(event.target.files?.[0] ?? null);
+            handleFileChange(event.target.files?.[0] ?? null);
           }}
         />
         <label className={styles.dropzone} htmlFor={inputId}>
@@ -87,16 +107,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         </div>
         <div className={styles.actionRow}>
           {selectedFile ? (
-            <button
-              type="button"
-              className={styles.secondaryButton}
-              onClick={() => {
-                setSelectedFile(null);
-                if (inputRef.current) {
-                  inputRef.current.value = "";
-                }
-              }}
-            >
+            <button type="button" className={styles.secondaryButton} onClick={clearSelection}>
               Clear Selection
             </button>
           ) : null}

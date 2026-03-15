@@ -1,5 +1,6 @@
 import styles from "./page.module.css";
 import { GalleryFrame } from "./components/gallery-frame";
+import { LiveLab } from "./components/live-lab";
 import { getLionMetrics } from "./lib/lion-data";
 
 const architectureSteps = [
@@ -30,29 +31,23 @@ const architectureSteps = [
   },
 ] as const;
 
-const galleryCards = [
-  { title: "Reef corridor / pass A", time: 0.6, tags: ["lion fish", "annotated"] },
-  { title: "Coral shelf / drift scan", time: 1.8, tags: ["video", "review"] },
-  { title: "Ridge line / alert candidate", time: 2.9, tags: ["json", "manifest"] },
-  { title: "Breakwater / high visibility", time: 4.1, tags: ["field clip", "reef"] },
-  { title: "Kelp edge / side pass", time: 5.5, tags: ["monitoring", "export"] },
-  { title: "Survey closeout / output review", time: 7.0, tags: ["archive", "demo"] },
-] as const;
+const galleryMoments = [0.6, 1.8, 2.9, 4.1, 5.5, 7.0] as const;
 
-const analyticsBars = [44, 58, 66, 74, 82, 78] as const;
-const mobileAnalyticsBars = [36, 68, 52, 78, 62] as const;
+function formatPreviewTime(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
+}
 
 export default async function Home() {
   const metrics = await getLionMetrics();
   const videoSrc = "/media/lionfish-demo.mp4";
-  const galleryCaptions = [
-    `bbox confidence ${metrics.avgConfidence}`,
-    `peak ${metrics.maxConfidence}`,
-    `${metrics.detectionCount} detections logged`,
-    `fps ${metrics.fps}`,
-    `runtime ${metrics.runtime}`,
-    `source ${metrics.sourceName}`,
-  ];
+  const galleryCards = galleryMoments.map((time, index) => ({
+    title: `Preview frame ${index + 1}`,
+    label: formatPreviewTime(time),
+    time,
+    tags: ["demo clip", "preview frame"],
+  }));
 
   return (
     <main className={styles.pageShell} id="top">
@@ -135,7 +130,7 @@ export default async function Home() {
                 <span />
                 <span />
               </div>
-              <div className={styles.consoleTitle}>Reef Watch / Active annotated feed</div>
+              <div className={styles.consoleTitle}>Reef Watch / Active preview feed</div>
               <div className={`${styles.consoleChip} ${styles.consoleChipCoral}`}>Live demo</div>
             </div>
             <div className={styles.heroMediaFrame}>
@@ -191,91 +186,12 @@ export default async function Home() {
             <p className={styles.eyebrow}>Live lab</p>
             <h2>A web-app-first upload and review zone.</h2>
             <p>
-              This section is the main hybrid app anchor. It needs to feel usable and inspectable before the user reads
-              anything else.
+              The upload area now behaves like a real browser control. It lets you select local media and preview it
+              immediately, while clearly marking any still-unwired inference outputs as placeholders.
             </p>
           </div>
 
-          <div className={styles.liveGrid}>
-            <article className={`${styles.card} ${styles.uploadCard}`}>
-              <p className={styles.cardTopline}>Upload dock</p>
-              <h3>Drop a reef clip or still-image set.</h3>
-              <p>
-                Oversized brutalist dropzone, bordered hard in black, with enough negative space to feel like a product
-                tool rather than a landing-page form.
-              </p>
-              <div className={styles.dropzone}>
-                <div className={styles.dropzoneIcon}>+</div>
-                <div className={styles.dropzoneCopy}>Drag footage here or select a source folder</div>
-                <div className={styles.dropzoneHint}>accepted / .mp4 .mov .jpg .png</div>
-              </div>
-              <div className={styles.fileChipRow}>
-                <span className={styles.fileChip}>{metrics.sourceName}</span>
-                <span className={styles.fileChip}>preset / lionfish</span>
-                <span className={styles.fileChip}>conf / 0.25</span>
-              </div>
-            </article>
-
-            <article className={`${styles.card} ${styles.monitorCard}`}>
-              <p className={styles.cardTopline}>Annotated monitor</p>
-              <div className={styles.monitorGrid}>
-                <div className={styles.previewPanel}>
-                  <video className={styles.fullVideo} src={videoSrc} autoPlay muted loop playsInline preload="metadata" />
-                  <span className={styles.previewTag}>hosted-predict</span>
-                </div>
-                <div className={styles.previewStats}>
-                  <div className={styles.miniMetric}>
-                    <span>Resolution</span>
-                    <strong>{metrics.resolution}</strong>
-                  </div>
-                  <div className={styles.miniMetric}>
-                    <span>Frames</span>
-                    <strong>{metrics.frameCount}</strong>
-                  </div>
-                  <div className={styles.miniMetric}>
-                    <span>FPS</span>
-                    <strong>{metrics.fps}</strong>
-                  </div>
-                  <div className={styles.miniMetric}>
-                    <span>Total detections</span>
-                    <strong>{metrics.detectionCount}</strong>
-                  </div>
-                </div>
-              </div>
-            </article>
-
-            <div className={styles.opsStack}>
-              <article className={`${styles.card} ${styles.opsCard}`}>
-                <p className={styles.cardTopline}>Run context</p>
-                <div className={styles.opsGrid}>
-                  <div className={styles.miniMetricCompact}>
-                    <span>Manifest</span>
-                    <strong>runs/lionfish/last_run.json</strong>
-                  </div>
-                  <div className={styles.miniMetricCompact}>
-                    <span>Output video</span>
-                    <strong>_pred.mp4</strong>
-                  </div>
-                  <div className={styles.miniMetricCompact}>
-                    <span>Frame json</span>
-                    <strong>saved</strong>
-                  </div>
-                  <div className={styles.miniMetricCompact}>
-                    <span>Preset</span>
-                    <strong>lionfish</strong>
-                  </div>
-                </div>
-              </article>
-              <article className={`${styles.card} ${styles.opsCard}`}>
-                <p className={styles.cardTopline}>Design intent notes</p>
-                <ul className={styles.noteList}>
-                  <li>Keep the upload surface oversized and first-class in the hierarchy.</li>
-                  <li>Signal a real operator workflow rather than generic AI marketing.</li>
-                  <li>Treat the micro-controls here as layout scaffolding, not finished product spec.</li>
-                </ul>
-              </article>
-            </div>
-          </div>
+          <LiveLab metrics={metrics} defaultVideoSrc={videoSrc} />
         </section>
 
         <section className={`${styles.sectionBlock} ${styles.gallerySection}`} id="gallery">
@@ -283,23 +199,23 @@ export default async function Home() {
             <p className={styles.eyebrow}>Detection gallery</p>
             <h2>A dense footage wall for lots of object-detection examples.</h2>
             <p>
-              The gallery should feel like a living archive of reef observations: footage, stills, confidence tags,
-              and metadata chips distributed across a chunky, high-contrast mosaic.
+              The gallery is now framed as real preview stills from the demo clip rather than invented sample data. It
+              stays visually rich without pretending the page already has live detection metadata attached.
             </p>
           </div>
 
           <div className={styles.galleryGrid}>
-            {galleryCards.map((card, index) => (
+            {galleryCards.map((card) => (
               <article key={card.title} className={`${styles.card} ${styles.galleryCard}`}>
                 <GalleryFrame label={card.title} seconds={card.time} videoSrc={videoSrc} width={640} height={360} />
                 <div className={styles.galleryMeta}>
                   <div>
                     <h3>{card.title}</h3>
-                    <p>{galleryCaptions[index]}</p>
+                    <p>{`Captured at ${card.label} from ${metrics.sourceName}`}</p>
                   </div>
                   <div className={styles.galleryTags}>
                     {card.tags.map((tag) => (
-                      <span key={tag} className={styles.fileChip}>
+                      <span key={`${card.title}-${tag}`} className={styles.fileChip}>
                         {tag}
                       </span>
                     ))}
@@ -313,10 +229,10 @@ export default async function Home() {
         <section className={`${styles.sectionBlock} ${styles.analyticsSection}`} id="analytics">
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Analysis + stats</p>
-            <h2>Make the analytics area look powerful without over-specifying it.</h2>
+            <h2>Powerful layout, explicit placeholders.</h2>
             <p>
-              These modules stay deliberately high-level. The priority here is composition, hierarchy, and a believable
-              stats surface for confusion matrices, precision-recall curves, and run summaries.
+              These modules no longer fake evaluation numbers. Until scored validation outputs are connected, each card
+              stays clearly labeled as a placeholder with N/A values.
             </p>
           </div>
 
@@ -324,29 +240,28 @@ export default async function Home() {
             <article className={`${styles.card} ${styles.analyticsCard}`}>
               <p className={styles.cardTopline}>Confusion matrix</p>
               <div className={styles.matrixGrid}>
-                <div className={`${styles.matrixCell} ${styles.matrixHot}`}>91</div>
-                <div className={`${styles.matrixCell} ${styles.matrixMild}`}>8</div>
-                <div className={`${styles.matrixCell} ${styles.matrixMild}`}>6</div>
-                <div className={`${styles.matrixCell} ${styles.matrixCold}`}>2</div>
+                <div className={`${styles.matrixCell} ${styles.matrixCold}`}>N/A</div>
+                <div className={`${styles.matrixCell} ${styles.matrixCold}`}>N/A</div>
+                <div className={`${styles.matrixCell} ${styles.matrixCold}`}>N/A</div>
+                <div className={`${styles.matrixCell} ${styles.matrixCold}`}>N/A</div>
               </div>
-              <p className={styles.analyticsCaption}>Large matrix block, intentionally simple but visually weighted.</p>
+              <p className={styles.analyticsCaption}>Placeholder until evaluation exports are connected.</p>
             </article>
 
             <article className={`${styles.card} ${styles.analyticsCard}`}>
               <p className={styles.cardTopline}>Precision / recall</p>
-              <div className={styles.trendChart}>
-                {analyticsBars.map((height, index) => (
-                  <span key={`${height}-${index}`} style={{ height: `${height}%` }} />
-                ))}
+              <div className={styles.placeholderSurface}>
+                <strong className={styles.placeholderTitle}>N/A</strong>
+                <p className={styles.placeholderCopy}>Precision-recall data is not wired into the homepage yet.</p>
               </div>
               <div className={styles.metricPairRow}>
                 <div className={styles.miniMetricCompact}>
-                  <span>precision</span>
-                  <strong>0.91</strong>
+                  <span>Precision</span>
+                  <strong>N/A</strong>
                 </div>
                 <div className={styles.miniMetricCompact}>
-                  <span>recall</span>
-                  <strong>0.86</strong>
+                  <span>Recall</span>
+                  <strong>N/A</strong>
                 </div>
               </div>
             </article>
@@ -355,15 +270,11 @@ export default async function Home() {
               <p className={styles.cardTopline}>Sensitivity / specificity</p>
               <div className={styles.ringRow}>
                 <div className={styles.ringMetric}>
-                  <div className={styles.ring} style={{ ["--ring-fill" as string]: "92%", ["--ring-color" as string]: "var(--lion-aqua)" }}>
-                    92%
-                  </div>
+                  <div className={`${styles.ring} ${styles.ringPlaceholder}`}>N/A</div>
                   <span>Sensitivity</span>
                 </div>
                 <div className={styles.ringMetric}>
-                  <div className={styles.ring} style={{ ["--ring-fill" as string]: "88%", ["--ring-color" as string]: "var(--lion-coral)" }}>
-                    88%
-                  </div>
+                  <div className={`${styles.ring} ${styles.ringPlaceholder}`}>N/A</div>
                   <span>Specificity</span>
                 </div>
               </div>
@@ -373,20 +284,20 @@ export default async function Home() {
               <p className={styles.cardTopline}>Run summary</p>
               <div className={styles.summaryGrid}>
                 <div className={styles.miniMetricCompact}>
+                  <span>Source</span>
+                  <strong>{metrics.sourceName}</strong>
+                </div>
+                <div className={styles.miniMetricCompact}>
+                  <span>Output mode</span>
+                  <strong>{metrics.outputMode}</strong>
+                </div>
+                <div className={styles.miniMetricCompact}>
+                  <span>Manifest</span>
+                  <strong>{metrics.manifestPath}</strong>
+                </div>
+                <div className={styles.miniMetricCompact}>
                   <span>Model</span>
                   <strong>{metrics.hostedModelShort}</strong>
-                </div>
-                <div className={styles.miniMetricCompact}>
-                  <span>Frames</span>
-                  <strong>{metrics.frameCount}</strong>
-                </div>
-                <div className={styles.miniMetricCompact}>
-                  <span>Mean conf.</span>
-                  <strong>{metrics.avgConfidence}</strong>
-                </div>
-                <div className={styles.miniMetricCompact}>
-                  <span>Max conf.</span>
-                  <strong>{metrics.maxConfidence}</strong>
                 </div>
               </div>
             </article>
@@ -411,7 +322,7 @@ export default async function Home() {
             </div>
             <div className={`${styles.card} ${styles.footerCard}`}>
               <h3>Outputs</h3>
-              <p>runs/lionfish/hosted-predict</p>
+              <p>{metrics.outputVideoName}</p>
             </div>
             <div className={`${styles.card} ${styles.footerCard}`}>
               <h3>Reference cues</h3>
@@ -423,12 +334,12 @@ export default async function Home() {
 
       <div className={styles.mobileDock}>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
-          <span>Frames</span>
-          <strong>{metrics.frameCount}</strong>
+          <span>Source</span>
+          <strong>{metrics.sourceName}</strong>
         </div>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
-          <span>Avg conf.</span>
-          <strong>{metrics.avgConfidence}</strong>
+          <span>Output</span>
+          <strong>{metrics.outputMode}</strong>
         </div>
         <div className={`${styles.card} ${styles.mobileDockCard}`}>
           <span>FPS</span>
@@ -440,23 +351,22 @@ export default async function Home() {
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
           <p className={styles.cardTopline}>Gallery</p>
           <GalleryFrame label="reef archive" seconds={3.6} videoSrc={videoSrc} width={320} height={180} compact />
-          <p className={styles.mobileCaption}>reef archive / annotated examples</p>
+          <p className={styles.mobileCaption}>{`Source ${metrics.sourceName}`}</p>
         </article>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
           <p className={styles.cardTopline}>Analytics</p>
-          <div className={styles.mobileBars}>
-            {mobileAnalyticsBars.map((height, index) => (
-              <span key={`${height}-${index}`} style={{ height: `${height}%` }} />
-            ))}
+          <div className={styles.placeholderSurface}>
+            <strong className={styles.placeholderTitle}>N/A</strong>
+            <p className={styles.placeholderCopy}>Evaluation metrics will appear here once scoring data is connected.</p>
           </div>
           <div className={styles.metricPairRow}>
             <div className={styles.miniMetricCompact}>
-              <span>precision</span>
-              <strong>0.91</strong>
+              <span>Precision</span>
+              <strong>N/A</strong>
             </div>
             <div className={styles.miniMetricCompact}>
-              <span>recall</span>
-              <strong>0.86</strong>
+              <span>Recall</span>
+              <strong>N/A</strong>
             </div>
           </div>
         </article>
@@ -464,6 +374,3 @@ export default async function Home() {
     </main>
   );
 }
-
-
-
