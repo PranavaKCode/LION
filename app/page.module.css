@@ -1761,3 +1761,41 @@
     min-height: 180px;
   }
 }
+.coverageGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.coverageCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.coverageList {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.coverageList li {
+  line-height: 1.45;
+}
+
+.coverageNote {
+  margin: 0;
+}
+
+.coverageOutro {
+  max-width: 70ch;
+  margin-top: 1rem;
+}
+
+@media (max-width: 900px) {
+  .coverageGrid {
+    grid-template-columns: 1fr;
+  }
+}
