@@ -30,7 +30,7 @@ const architectureSteps = [
   {
     step: "05",
     title: "Manifest + scoring hooks",
-    description: "Run manifests, JSON payloads, and future evaluation exports stay ready for confusion matrices and reef-health analysis.",
+    description: "Run manifests, JSON payloads, and follow-on reporting stay ready for downstream model-analytics pages.",
   },
 ] as const;
 
@@ -150,12 +150,14 @@ const galleryCards = [
 
 const detectableSpeciesFamilies = [
   {
-    title: "MegaFauna and Rare Species",
+    eyebrow: "MegaFauna",
+    title: "MegaFauna + Rare Species",
     items: ["Sharks", "Sea Turtles", "Rays"],
     note: "Rare-fauna sightings broaden the reef-health picture beyond the invasive-species watch.",
   },
   {
-    title: "Fish Species",
+    eyebrow: "Fish Species",
+    title: "Fish + Bio-indicator Sweep",
     items: [
       "Butterfly Fish (Chaetodontidae)",
       "Grouper (Serranidae)",
@@ -171,14 +173,16 @@ const detectableSpeciesFamilies = [
     note: "These fish classes anchor the broader Indo-Pacific bio-indicator sweep inside the Reef Health Suite.",
   },
   {
+    eyebrow: "Invertebrates",
     title: "Invertebrates Species",
     items: ["Giant Clam", "Urchin", "Sea Cucumber", "Lobster", "Crown of Thorns"],
     note: "These invertebrate lanes help surface coral pressure, seabed health, and habitat complexity.",
   },
   {
+    eyebrow: "Invasive Watch",
     title: "Lionfish",
     items: ["Lionfish"],
-    note: "The invasive-species watch remains its own lane for faster review, removal, and response planning.",
+    note: "The invasive-species watch stays separate for faster review, removal planning, and response workflows.",
   },
 ] as const;
 
@@ -209,9 +213,17 @@ export default async function Home() {
   const videoSrc = "/media/lionfish-demo.mp4";
   const liveDemoGifSrc = "/media/Live_demo.gif";
   const detectorLaneLabels = DETECTOR_OPTIONS.map((option) => option.shortLabel).join(" / ");
-  const localSuiteLabel = process.env.MARINE_DETECT_API_URL ? "Remote reef-health service linked" : "Remote service configurable";
+  const localSuiteLabel = process.env.MARINE_DETECT_API_URL ? "Remote suite live" : "Remote suite configurable";
   const mobileSpecies = galleryCards[0];
   const gallerySpeciesCount = galleryCards.length;
+  const consoleMetadata = [
+    { label: "Reference source", value: metrics.sourceName },
+    { label: "Resolution", value: metrics.resolution },
+    { label: "Reference fps", value: metrics.fps },
+    { label: "Hosted lane", value: metrics.hostedModelShort },
+    { label: "Manifest", value: metrics.manifestPath },
+    { label: "Remote suite", value: localSuiteLabel },
+  ] as const;
 
   return (
     <main className={styles.pageShell} id="top">
@@ -229,10 +241,19 @@ export default async function Home() {
 
         <header className={`${styles.card} ${styles.topNav}`}>
           <div className={styles.brandBlock}>
-            <div className={styles.brandBadge}>L</div>
+            <div className={styles.brandLogoWrap}>
+              <Image
+                className={styles.brandLogo}
+                src="/media/lion-logo-mark.svg"
+                alt="L.I.O.N. logo"
+                width={88}
+                height={88}
+                priority
+              />
+            </div>
             <div>
               <div className={styles.brandName}>L.I.O.N.</div>
-              <div className={styles.brandSubtitle}>REEF HEALTH + INVASIVE SPECIES</div>
+              <div className={styles.brandSubtitle}>LIVE INVASIVE-SPECIES OBSERVATION NETWORK</div>
             </div>
           </div>
           <nav className={styles.navLinks} aria-label="Primary">
@@ -240,7 +261,6 @@ export default async function Home() {
             <a href="#live-lab">Live Lab</a>
             <a href="#gallery">Gallery</a>
             <a href="#species-map">Map</a>
-            <a href="#analytics">Analytics</a>
             <a href="/model-analytics">Model Graphs</a>
             <a href="/model-report">Model Report</a>
             <a href="#footer">Docs</a>
@@ -258,7 +278,7 @@ export default async function Home() {
               <span className={styles.heroAccent}>from one living marine dashboard.</span>
             </h1>
             <p className={styles.heroText}>
-              L.I.O.N. now routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
+              L.I.O.N. routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
               crown-of-thorns watch, and a marine-detect-style Reef Health Suite that can run through a remote Python
               service or a local fallback using your FishInv and MegaFauna models.
             </p>
@@ -319,11 +339,11 @@ export default async function Home() {
                 </div>
                 <div className={styles.overlayCard}>
                   <span className={styles.statLabel}>Peak confidence</span>
-                  <strong className={styles.statValue}>0.91</strong>
+                  <strong className={styles.statValue}>{metrics.maxConfidence}</strong>
                 </div>
                 <div className={`${styles.overlayCard} ${styles.overlayCardAccent}`}>
                   <span className={styles.statLabel}>Runtime</span>
-                  <strong className={styles.statValue}>8.3s</strong>
+                  <strong className={styles.statValue}>{metrics.runtime}</strong>
                 </div>
               </div>
             </div>
@@ -331,7 +351,17 @@ export default async function Home() {
               <div className={styles.consoleMiniChip}>Multi-species monitoring surface</div>
               <div className={styles.consoleMiniChip}>Real-time alert review</div>
               <div className={styles.consoleMiniChip}>Field footage + lab validation</div>
-              <div className={styles.consoleMiniChip}>Structured run metadata</div>
+              <div className={styles.consoleMetaPanel}>
+                <p className={styles.consoleMetaTitle}>Structured run metadata</p>
+                <div className={styles.consoleMetaGrid}>
+                  {consoleMetadata.map((item) => (
+                    <div key={item.label} className={styles.consoleMetaItem}>
+                      <span className={styles.consoleMetaLabel}>{item.label}</span>
+                      <strong className={styles.consoleMetaValue}>{item.value}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -380,7 +410,8 @@ export default async function Home() {
             <h2>Species intelligence wall for reef risk monitoring.</h2>
             <p>
               These slots now use actual prediction captures you supplied. Species without gallery media were removed
-              from the visual wall and moved into the coverage list below so the site stays honest about what is shown.
+              from the visual wall and folded into the species coverage guide below so the site stays honest about what
+              is shown.
             </p>
           </div>
 
@@ -420,8 +451,11 @@ export default async function Home() {
           <div className={styles.coverageGrid}>
             {detectableSpeciesFamilies.map((family) => (
               <article key={family.title} className={`${styles.card} ${styles.coverageCard}`}>
-                <p className={styles.cardTopline}>{family.title}</p>
-                <ul className={styles.coverageList}>
+                <div className={styles.coverageHeader}>
+                  <p className={styles.cardTopline}>{family.eyebrow}</p>
+                  <h3 className={styles.coverageHeading}>{family.title}</h3>
+                </div>
+                <ul className={styles.coverageListWide}>
                   {family.items.map((item) => (
                     <li key={`${family.title}-${item}`}>{item}</li>
                   ))}
@@ -432,25 +466,23 @@ export default async function Home() {
           </div>
 
           <p className={styles.coverageOutro}>
-            The visual wall stays scoped to the real supplied prediction assets above, while the detection stack covers
-            the full species families listed here and much more as the reef-health suite expands.
+            The visual wall above stays scoped to the real supplied prediction assets, while the full detection stack
+            covers the reef-health classes listed here and more as the suite expands.
           </p>
         </section>
 
         <section className={styles.sectionBlock} id="species-map">
           <div className={styles.sectionHeading}>
-            <p className={styles.eyebrow}>Global detections map</p>
-            <h2>Interactive invasive species points from the uploaded observation dataset.</h2>
+            <p className={styles.eyebrow}>Reef observation map</p>
+            <h2>Sparse watch-zone points across the Atlantic and Indo-Pacific.</h2>
             <p>
-              Explore the CSV-driven map, hover points to identify the species, and zoom into clusters to inspect how
-              detections are distributed across the marine dataset.
+              This map now uses a sparse, hand-curated set of realistic reef observations instead of a dense random CSV.
+              It is meant to show likely watch zones for species L.I.O.N. can surface today, not fake global saturation.
             </p>
           </div>
 
           <SpeciesMapClient csvPath="/media/invasive_marine_species_points (1).csv" />
         </section>
-
-      
 
         <footer className={styles.footerBlock} id="footer">
           <div className={`${styles.card} ${styles.footerBanner}`}>
@@ -462,7 +494,14 @@ export default async function Home() {
                 field-first workflows.
               </p>
             </div>
-            <form className={styles.waitlistForm} action="#" method="post">
+            <form
+              className={styles.waitlistForm}
+              action="https://formspree.io/f/mdawlvjw"
+              method="post"
+              acceptCharset="UTF-8"
+            >
+              <input type="hidden" name="_subject" value="L.I.O.N. waitlist request" />
+              <input type="hidden" name="source" value="lion-homepage" />
               <label className={styles.waitlistLabel} htmlFor="waitlist-email">
                 Work email
               </label>
@@ -478,7 +517,7 @@ export default async function Home() {
               <button className={styles.primaryButton} type="submit">
                 Request Early Access
               </button>
-              <p className={styles.waitlistDisclaimer}>No spam. Pilot invites go to selected marine and conservation teams.</p>
+              <p className={styles.waitlistDisclaimer}>Pilot requests are sent directly to Formspree for follow-up.</p>
             </form>
           </div>
           <div className={styles.footerGrid}>
@@ -491,8 +530,16 @@ export default async function Home() {
               <p>{metrics.outputVideoName}</p>
             </div>
             <div className={`${styles.card} ${styles.footerCard}`}>
-              <h3>Next scoring layer</h3>
-              <p>Wire real evaluation exports into confusion matrices, precision-recall curves, and ecosystem trend views.</p>
+              <h3>Model resources</h3>
+              <p>Validation curves and experiment writeups now live on the dedicated model graphs and report pages.</p>
+              <div className={styles.footerActions}>
+                <a className={styles.secondaryButton} href="/model-analytics">
+                  Open Graphs
+                </a>
+                <a className={styles.secondaryButton} href="/model-report">
+                  Read Report
+                </a>
+              </div>
             </div>
           </div>
         </footer>
@@ -520,21 +567,18 @@ export default async function Home() {
           <p className={styles.mobileCaption}>{mobileSpecies.highlight}</p>
         </article>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
-          <p className={styles.cardTopline}>Analytics</p>
-          <div className={styles.placeholderSurface}>
-            <strong className={styles.placeholderTitle}>N/A</strong>
-            <p className={styles.placeholderCopy}>Validation exports will appear here once species scoring is connected.</p>
+          <p className={styles.cardTopline}>Model resources</p>
+          <div className={styles.mobileResourceActions}>
+            <a className={styles.primaryButton} href="/model-analytics">
+              Model Graphs
+            </a>
+            <a className={styles.secondaryButton} href="/model-report">
+              Model Report
+            </a>
           </div>
-          <div className={styles.metricPairRow}>
-            <div className={styles.miniMetricCompact}>
-              <span>Precision</span>
-              <strong>N/A</strong>
-            </div>
-            <div className={styles.miniMetricCompact}>
-              <span>Recall</span>
-              <strong>N/A</strong>
-            </div>
-          </div>
+          <p className={styles.mobileCaption}>
+            Reporting and validation views live on their own pages so the homepage can stay focused on detection work.
+          </p>
         </article>
       </section>
     </main>
