@@ -1,0 +1,6 @@
+roboflow<2,>=1.1.0
+opencv-python<5,>=4.8
+ultralytics<9,>=8.3
+fastapi<1,>=0.115
+python-multipart<1,>=0.0.9
+uvicorn<1,>=0.30

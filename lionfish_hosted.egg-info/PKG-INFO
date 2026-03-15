@@ -1,0 +1,160 @@
+Metadata-Version: 2.4
+Name: lionfish-hosted
+Version: 0.5.0
+Summary: Hosted and local marine-species inference for images and video.
+Requires-Python: <3.13,>=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: roboflow<2,>=1.1.0
+Requires-Dist: opencv-python<5,>=4.8
+Requires-Dist: ultralytics<9,>=8.3
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: python-multipart<1,>=0.0.9
+Requires-Dist: uvicorn<1,>=0.30
+
+# L.I.O.N. Web App
+
+Next.js homepage and Live Lab for a reef-health monitoring surface with hosted invasive-species detectors and a remote-capable Reef Health Suite.
+
+## What is in this repo
+
+- A long-scroll undersea homepage for the L.I.O.N. control surface
+- A `Live Lab` upload flow with multiple detector lanes
+- Hosted Roboflow inference for lionfish and crown-of-thorns detection
+- A Reef Health Suite that can use FishInv and MegaFauna through either:
+  - a remote Python service compatible with the app
+  - a local Python fallback on your own machine
+- A Vercel Blob upload route for large deployed video uploads
+- The local Python inference CLI in `lionfish_yolo.py`
+- A deployable FastAPI service in `services/marine_detect_api/main.py`
+
+## Detector lanes
+
+- `Lionfish Watch`: hosted Roboflow detector for the existing lionfish workflow
+- `Crown of Thorns`: hosted Roboflow detector for crown-of-thorns starfish
+- `Reef Health Suite`: marine-detect-style paired-model lane for fish, invertebrates, megafauna, and rare species
+
+The Reef Health Suite follows the paired-model idea from Orange OpenSource's marine-detect project:
+[marine-detect](https://github.com/Orange-OpenSource/marine-detect?tab=readme-ov-file)
+
+## How Live Lab works now
+
+- Images sent to hosted lanes are forwarded to Roboflow inference.
+- Hosted video lanes use Roboflow async video jobs and return browser overlays for playback.
+- Large deployed video uploads can be staged in Vercel Blob first.
+- Reef Health Suite requests now behave like this:
+  - If `MARINE_DETECT_API_URL` is configured, the app sends uploads or blob URLs to the remote Python service.
+  - If no remote service is configured, the app falls back to the local Python runner.
+
+## Remote Reef Health Suite service
+
+Run the Python service anywhere you want the FishInv and MegaFauna models to live:
+
+```bash
+uvicorn services.marine_detect_api.main:app --host 0.0.0.0 --port 8000
+```
+
+Then configure the Next app with:
+
+```env
+MARINE_DETECT_API_URL=http://your-service-host:8000
+```
+
+Optional auth:
+
+```env
+MARINE_DETECT_API_TOKEN=your_shared_token
+```
+
+If the token is set on the service host, set the same token in the Next app.
+
+## Requirements
+
+- Node.js for the Next.js app
+- `ROBOFLOW_API_KEY` for hosted detectors
+- Optional `BLOB_READ_WRITE_TOKEN` for large deployed video uploads
+- Python 3.10 to 3.12 with the project dependencies if you want the local fallback or the remote Reef Health Suite service
+
+## Setup
+
+1. Install Node dependencies:
+
+```bash
+npm install
+```
+
+2. Create a local env file from the example:
+
+```bash
+copy .env.example .env.local
+```
+
+3. Edit `.env.local` and set at least:
+
+```env
+ROBOFLOW_API_KEY=your_key_here
+```
+
+4. If you want the Reef Health Suite, configure either the remote service or the local fallback.
+
+Remote service:
+
+```env
+MARINE_DETECT_API_URL=http://your-service-host:8000
+MARINE_DETECT_API_TOKEN=your_shared_token
+```
+
+Local fallback:
+
+```env
+LION_PYTHON_BIN=C:\path\to\python.exe
+FISH_INV_MODEL_PATH=C:\path\to\FishInv.pt
+MEGA_FAUNA_MODEL_PATH=C:\path\to\MegaFauna.pt
+```
+
+5. If you want large deployed video uploads, also configure Vercel Blob:
+
+```env
+BLOB_READ_WRITE_TOKEN=your_blob_token_here
+```
+
+6. Run the app:
+
+```bash
+npm run dev
+```
+
+7. Open `http://localhost:3000` and use the `Live Lab` section.
+
+## Python setup
+
+```bash
+py -3.11 -m venv .venv311
+.\.venv311\Scripts\activate
+pip install -e .
+```
+
+That installs `roboflow`, `opencv-python`, `ultralytics`, `fastapi`, `python-multipart`, and `uvicorn`.
+
+## Environment variables
+
+```env
+ROBOFLOW_API_KEY=your_roboflow_api_key
+ROBOFLOW_WORKSPACE=su-eaelw
+ROBOFLOW_PROJECT=lionfish-qs3tq
+ROBOFLOW_MODEL_VERSION=49
+ROBOFLOW_VIDEO_INFER_FPS=5
+BLOB_READ_WRITE_TOKEN=your_vercel_blob_token_for_large_deployed_video_uploads
+MARINE_DETECT_API_URL=http://your-service-host:8000
+MARINE_DETECT_API_TOKEN=your_shared_token
+LION_PYTHON_BIN=C:\path\to\python.exe
+FISH_INV_MODEL_PATH=C:\path\to\FishInv.pt
+MEGA_FAUNA_MODEL_PATH=C:\path\to\MegaFauna.pt
+```
+
+## Notes
+
+- The gallery can now render actual species media where assets exist; the first lionfish slot is using a real media asset and the remaining slots stay clearly labeled.
+- I could not automatically locate your attached species image files on disk from this environment, so additional gallery swaps still need exact local file paths.
+- Analytics cards still show `N/A` until scored evaluation exports are connected.
+- Hosted lanes work remotely with Roboflow configured.
+- The Reef Health Suite is remote-capable now, but it still needs a Python service host or a local fallback with the model weights available.
