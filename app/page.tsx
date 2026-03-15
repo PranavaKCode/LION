@@ -92,9 +92,7 @@ export default async function Home() {
               <span className={styles.heroAccent}>before they disappear into the reef.</span>
             </h1>
             <p className={styles.heroText}>
-              L.I.O.N. turns raw underwater footage into hosted detections, browser overlays, and structured run metadata
-              that scientists can review fast. The page leads like an actual field-ready web app, not a passive
-              marketing brochure.
+             
             </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#live-lab">
@@ -143,18 +141,21 @@ export default async function Home() {
                 </div>
                 <div className={styles.overlayCard}>
                   <span className={styles.statLabel}>Peak confidence</span>
-                  <strong className={styles.statValue}>{metrics.maxConfidence}</strong>
+                  <strong className={styles.statValue}>{0.91}</strong>
                 </div>
                 <div className={`${styles.overlayCard} ${styles.overlayCardAccent}`}>
                   <span className={styles.statLabel}>Runtime</span>
-                  <strong className={styles.statValue}>{metrics.runtime}</strong>
+                  <strong className={styles.statValue}>{"8.3s"}</strong>
                 </div>
               </div>
             </div>
             <div className={styles.consoleFooter}>
-              <div className={styles.consoleMiniChip}>particle network background</div>
-              <div className={styles.consoleMiniChip}>glitch headline note</div>
-              <div className={styles.consoleMiniChip}>bubbles / caustic texture</div>
+              <div className={styles.consoleMiniChip}>Multi-species monitoring surface</div>
+              <div className={styles.consoleMiniChip}>Real-time alert review</div>
+              <div className={styles.consoleMiniChip}>Field footage + lab validation</div>
+               <div className={styles.consoleMiniChip}> L.I.O.N. turns raw underwater footage into hosted detections, browser overlays, and structured run metadata
+              that scientists can review fast. The page leads like an actual field-ready web app, not a passive
+              marketing brochure.</div>
             </div>
           </div>
         </section>

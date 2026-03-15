@@ -418,17 +418,26 @@
 .consoleFooter {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto minmax(62px, 1fr);
   gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
 }
 
 .consoleMiniChip {
   display: grid;
   min-height: 62px;
   place-items: center;
-  padding: 0.625rem;
+  padding: 0.875rem 1rem;
   font-family: var(--font-mono-lion);
-  font-size: 0.75rem;
+  font-size: 1.05rem;
+  line-height: 1.55;
   text-align: center;
+}
+
+.consoleFooter > :last-child {
+  grid-column: 1 / -1;
+  min-height: 100%;
 }
 
 .sectionBlock {
