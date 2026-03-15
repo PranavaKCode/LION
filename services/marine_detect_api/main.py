@@ -18,20 +18,25 @@ LION_SCRIPT = REPO_ROOT / "lionfish_yolo.py"
 DEFAULT_CONFIDENCE = 0.25
 DEFAULT_SPECIALTIES = ("fish-invertebrates", "megafauna")
 VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".m4v", ".webm"}
+MODEL_STORAGE_DIR = Path(os.getenv("MODEL_STORAGE_DIR", REPO_ROOT / "models")).expanduser().resolve()
 MODEL_SPECS = {
     "fish-invertebrates": {
         "label": "Fish + Invertebrates",
         "env_var": "FISH_INV_MODEL_PATH",
+        "url_env_var": "FISH_INV_MODEL_URL",
+        "filename": "FishInv.pt",
         "fallback": REPO_ROOT / "models" / "FishInv.pt",
     },
     "megafauna": {
         "label": "MegaFauna + Rare Species",
         "env_var": "MEGA_FAUNA_MODEL_PATH",
+        "url_env_var": "MEGA_FAUNA_MODEL_URL",
+        "filename": "MegaFauna.pt",
         "fallback": REPO_ROOT / "models" / "MegaFauna.pt",
     },
 }
 
-app = FastAPI(title="L.I.O.N. Marine Detect Service", version="0.1.0")
+app = FastAPI(title="L.I.O.N. Marine Detect Service", version="0.2.0")
 
 
 class DetectFromUrlRequest(BaseModel):
@@ -76,18 +81,46 @@ def normalize_specialties(values: list[str] | None) -> list[str]:
     return normalized or list(DEFAULT_SPECIALTIES)
 
 
+def ensure_model_downloaded(spec: dict[str, Any]) -> Path | None:
+    url = os.getenv(spec["url_env_var"], "").strip()
+    if not url:
+        return None
+
+    MODEL_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    destination = MODEL_STORAGE_DIR / spec["filename"]
+    if destination.exists():
+        return destination
+
+    try:
+        with urllib.request.urlopen(url) as response, destination.open("wb") as target:
+            target.write(response.read())
+    except Exception as exc:  # pragma: no cover - depends on remote storage/network
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not download {spec['label']} weights from {spec['url_env_var']}: {exc}",
+        ) from exc
+
+    return destination
+
+
 def resolve_model_paths(specialties: list[str]) -> list[tuple[str, Path]]:
     resolved: list[tuple[str, Path]] = []
     for specialty in normalize_specialties(specialties):
         spec = MODEL_SPECS[specialty]
         configured = os.getenv(spec["env_var"], "").strip()
         candidates = [Path(configured).expanduser()] if configured else []
+        downloaded = ensure_model_downloaded(spec)
+        if downloaded is not None:
+            candidates.append(downloaded)
         candidates.append(spec["fallback"])
         model_path = next((candidate.resolve() for candidate in candidates if candidate and candidate.exists()), None)
         if model_path is None:
             raise HTTPException(
                 status_code=500,
-                detail=f"Could not find the {spec['label']} weights. Set {spec['env_var']} on the service host.",
+                detail=(
+                    f"Could not find the {spec['label']} weights. Set {spec['env_var']} on the service host, "
+                    f"or provide {spec['url_env_var']} so the service can download them."
+                ),
             )
         resolved.append((spec["label"], model_path))
     return resolved
@@ -99,7 +132,7 @@ def format_metric(value: float | None, digits: int = 2) -> str:
 
 def format_runtime(total_seconds: float | None) -> str:
     if total_seconds is None:
-      return "N/A"
+        return "N/A"
     minutes = int(total_seconds // 60)
     seconds = total_seconds - minutes * 60
     return f"{minutes:02d}:{seconds:04.1f}"

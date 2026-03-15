@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+.vercel
+coverage
+out
+build
+.tmp*
+.venv*
+__pycache__
+*.pyc
+public
+webapp

@@ -13,6 +13,7 @@ Next.js homepage and Live Lab for a reef-health monitoring surface with hosted i
 - A Vercel Blob upload route for large deployed video uploads
 - The local Python inference CLI in `lionfish_yolo.py`
 - A deployable FastAPI service in `services/marine_detect_api/main.py`
+- A Docker image definition for that service in `services/marine_detect_api/Dockerfile`
 
 ## Detector lanes
 
@@ -32,27 +33,67 @@ The Reef Health Suite follows the paired-model idea from Orange OpenSource's mar
   - If `MARINE_DETECT_API_URL` is configured, the app sends uploads or blob URLs to the remote Python service.
   - If no remote service is configured, the app falls back to the local Python runner.
 
+## What you need for real public website use
+
+The FishInv and MegaFauna models cannot run on GitHub Pages, and they are not a good fit for Vercel serverless functions because they need a Python runtime, large YOLO weights, and longer inference time.
+
+For website visitors to use the Reef Health Suite remotely, you need one extra service:
+
+- a public Python web service for `services/marine_detect_api/main.py`
+
+The simplest setup is:
+
+1. Keep the Next.js site on Vercel.
+2. Deploy the Python service separately using the Dockerfile in `services/marine_detect_api/Dockerfile`.
+3. Point the Next app at that service with `MARINE_DETECT_API_URL`.
+
 ## Remote Reef Health Suite service
 
-Run the Python service anywhere you want the FishInv and MegaFauna models to live:
+### Local test setup
+
+From the repo root:
 
 ```bash
-uvicorn services.marine_detect_api.main:app --host 0.0.0.0 --port 8000
+npm run dev:reef-service
 ```
+
+That starts the service on:
+
+```env
+http://127.0.0.1:8000
+```
+
+The repo-local `.env.local` on this machine is already configured to use that localhost service.
+
+### Public deployment setup
+
+Deploy the Python service anywhere that can run a Docker container. Good fits are a dedicated Python/container host such as Render, Railway, Fly.io, or another Docker-capable VM/container service.
+
+You will need to provide one of these for the model weights:
+
+- `FISH_INV_MODEL_PATH` and `MEGA_FAUNA_MODEL_PATH` on the service host if the files already exist there
+- or `FISH_INV_MODEL_URL` and `MEGA_FAUNA_MODEL_URL` so the service can download the `.pt` files on first use
 
 Then configure the Next app with:
 
 ```env
-MARINE_DETECT_API_URL=http://your-service-host:8000
-```
-
-Optional auth:
-
-```env
+MARINE_DETECT_API_URL=https://your-reef-service.example
 MARINE_DETECT_API_TOKEN=your_shared_token
 ```
 
 If the token is set on the service host, set the same token in the Next app.
+
+### Running the service manually
+
+```bash
+.\.venv311\Scripts\python.exe -m uvicorn services.marine_detect_api.main:app --host 0.0.0.0 --port 8000
+```
+
+### Service health check
+
+```bash
+http://127.0.0.1:8000/health
+```
 
 ## Requirements
 
@@ -86,8 +127,8 @@ ROBOFLOW_API_KEY=your_key_here
 Remote service:
 
 ```env
-MARINE_DETECT_API_URL=http://your-service-host:8000
-MARINE_DETECT_API_TOKEN=your_shared_token
+MARINE_DETECT_API_URL=http://127.0.0.1:8000
+MARINE_DETECT_API_TOKEN=
 ```
 
 Local fallback:
@@ -131,11 +172,14 @@ ROBOFLOW_PROJECT=lionfish-qs3tq
 ROBOFLOW_MODEL_VERSION=49
 ROBOFLOW_VIDEO_INFER_FPS=5
 BLOB_READ_WRITE_TOKEN=your_vercel_blob_token_for_large_deployed_video_uploads
-MARINE_DETECT_API_URL=http://your-service-host:8000
-MARINE_DETECT_API_TOKEN=your_shared_token
+MARINE_DETECT_API_URL=http://127.0.0.1:8000
+MARINE_DETECT_API_TOKEN=
 LION_PYTHON_BIN=C:\path\to\python.exe
 FISH_INV_MODEL_PATH=C:\path\to\FishInv.pt
 MEGA_FAUNA_MODEL_PATH=C:\path\to\MegaFauna.pt
+FISH_INV_MODEL_URL=https://your-public-host.example/FishInv.pt
+MEGA_FAUNA_MODEL_URL=https://your-public-host.example/MegaFauna.pt
+MODEL_STORAGE_DIR=C:\path\to\model-cache
 ```
 
 ## Notes
@@ -144,4 +188,4 @@ MEGA_FAUNA_MODEL_PATH=C:\path\to\MegaFauna.pt
 - I could not automatically locate your attached species image files on disk from this environment, so additional gallery swaps still need exact local file paths.
 - Analytics cards still show `N/A` until scored evaluation exports are connected.
 - Hosted lanes work remotely with Roboflow configured.
-- The Reef Health Suite is remote-capable now, but it still needs a Python service host or a local fallback with the model weights available.
+- The Reef Health Suite is remote-capable now, but it still needs a separate Python service host for public website users.
