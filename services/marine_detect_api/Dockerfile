@@ -1,20 +1,27 @@
 FROM python:3.11-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV MODEL_STORAGE_DIR=/app/models
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    MODEL_STORAGE_DIR=/tmp/models \
+    HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
 
-WORKDIR /app
-
-RUN apt-get update \
+RUN useradd -m -u 1000 user \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /tmp/models /home/user/app \
+    && chown -R user:user /tmp/models /home/user
 
-COPY pyproject.toml README.md lionfish_yolo.py /app/
-COPY services /app/services
+USER user
+WORKDIR /home/user/app
 
-RUN pip install --no-cache-dir -e .
+COPY --chown=user:user pyproject.toml README.md lionfish_yolo.py ./
+COPY --chown=user:user services ./services
 
-EXPOSE 10000
+RUN pip install -e .
 
-CMD ["sh", "-c", "python -m uvicorn services.marine_detect_api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+EXPOSE 7860
+
+CMD ["sh", "-c", "python -m uvicorn services.marine_detect_api.main:app --host 0.0.0.0 --port ${PORT:-7860}"]

@@ -329,11 +329,11 @@ def download_input(input_url: str, destination: Path) -> None:
         target.write(response.read())
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root() -> dict[str, str]:
     return {"status": "ok", "service": "L.I.O.N. Marine Detect Service"}
 

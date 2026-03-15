@@ -67,7 +67,7 @@ The repo-local `.env.local` on this machine is already configured to use that lo
 
 ### Public deployment setup
 
-Deploy the Python service anywhere that can run a Docker container. Good fits are a dedicated Python/container host such as Render, Railway, Fly.io, or another Docker-capable VM/container service.
+Deploy the Python service anywhere that can run a Docker container. Good fits are a dedicated Python/container host such as Hugging Face Docker Spaces, Render, Railway, Fly.io, or another Docker-capable VM/container service.
 
 You will need to provide one of these for the model weights:
 
@@ -75,6 +75,9 @@ You will need to provide one of these for the model weights:
 - or `FISH_INV_MODEL_URL` and `MEGA_FAUNA_MODEL_URL` so the service can download the `.pt` files on first use
 
 Then configure the Next app with:
+
+A Hugging Face Docker Space is a good free-first option for this service because it supports Docker and offers more memory than Render Free.
+
 
 ```env
 MARINE_DETECT_API_URL=https://your-reef-service.example
