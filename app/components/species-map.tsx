@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CircleMarker, MapContainer, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
 import styles from "./species-map.module.css";
 
 type SpeciesMapProps = {
@@ -108,6 +108,7 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
   }
 
   const speciesOrder = Object.keys(speciesCounts).sort((left, right) => speciesCounts[right] - speciesCounts[left]);
+  const enableMarkerPopups = points.length <= 1000;
 
   if (isLoading) {
     return <div className={styles.mapShell}>Loading map observations...</div>;
@@ -120,7 +121,7 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
   return (
     <div className={styles.layout}>
       <div className={styles.mapShell}>
-        <MapContainer center={[10, -95]} zoom={2} scrollWheelZoom className={styles.mapCanvas}>
+        <MapContainer center={[10, -95]} zoom={2} scrollWheelZoom className={styles.mapCanvas} preferCanvas>
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -136,11 +137,12 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
                 radius={7}
                 pathOptions={{ color, fillColor: color, fillOpacity: 0.8, weight: 2 }}
               >
-                <Tooltip direction="top" offset={[0, -8]}>{point.species}</Tooltip>
-                <Popup>
-                  <strong>{point.species}</strong>
-                  <div>{`Lat ${point.latitude.toFixed(3)}, Lon ${point.longitude.toFixed(3)}`}</div>
-                </Popup>
+                {enableMarkerPopups ? (
+                  <Popup>
+                    <strong>{point.species}</strong>
+                    <div>{`Lat ${point.latitude.toFixed(3)}, Lon ${point.longitude.toFixed(3)}`}</div>
+                  </Popup>
+                ) : null}
               </CircleMarker>
             );
           })}
