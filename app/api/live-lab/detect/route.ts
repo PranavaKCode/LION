@@ -141,6 +141,8 @@ type StartVideoJobRequest = {
   inputUrl?: string;
   sourceName?: string;
   detectorId?: string;
+  specialties?: string[];
+  confidence?: number;
 };
 
 function isServerlessHost() {
@@ -433,6 +435,8 @@ async function resolveServerConfig(): Promise<ServerConfig> {
     LIONFISH_PYTHON_BIN: process.env.LIONFISH_PYTHON_BIN,
     FISH_INV_MODEL_PATH: process.env.FISH_INV_MODEL_PATH,
     MEGA_FAUNA_MODEL_PATH: process.env.MEGA_FAUNA_MODEL_PATH,
+    MARINE_DETECT_API_URL: process.env.MARINE_DETECT_API_URL,
+    MARINE_DETECT_API_TOKEN: process.env.MARINE_DETECT_API_TOKEN,
   };
 
   const envFiles = [path.join(process.cwd(), ".env.local"), path.join(process.cwd(), ".env")];
@@ -479,6 +483,96 @@ async function fetchJson<T>(url: string, init: RequestInit, errorLabel: string):
   }
 
   return (await response.json()) as T;
+}
+
+function resolveMarineDetectService(config: ServerConfig) {
+  const serviceUrl = config.envValues.MARINE_DETECT_API_URL?.trim();
+  if (!serviceUrl) {
+    return null;
+  }
+
+  return {
+    url: serviceUrl.replace(/\/$/, ""),
+    token: config.envValues.MARINE_DETECT_API_TOKEN?.trim() || null,
+  };
+}
+
+function buildMarineDetectHeaders(service: { url: string; token: string | null }, includeJson = false) {
+  const headers = new Headers();
+  if (includeJson) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (service.token) {
+    headers.set("Authorization", `Bearer ${service.token}`);
+  }
+  return headers;
+}
+
+async function runRemoteReefHealthSuiteUpload(options: {
+  config: ServerConfig;
+  file: File;
+  confidence: number;
+  specialties: ReefSpecialtyId[];
+}): Promise<LiveLabCompleteResponse> {
+  const { config, file, confidence, specialties } = options;
+  const service = resolveMarineDetectService(config);
+  if (!service) {
+    throw new Error("MARINE_DETECT_API_URL is not configured for remote Reef Health Suite inference.");
+  }
+
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("confidence", confidence.toString());
+  for (const specialty of specialties) {
+    formData.append("specialties", specialty);
+  }
+
+  const response = await fetch(`${service.url}/detect/upload`, {
+    method: "POST",
+    headers: buildMarineDetectHeaders(service),
+    body: formData,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Remote reef-health service error: ${details || response.statusText}`);
+  }
+
+  return (await response.json()) as LiveLabCompleteResponse;
+}
+
+async function runRemoteReefHealthSuiteFromUrl(options: {
+  config: ServerConfig;
+  inputUrl: string;
+  sourceName: string;
+  confidence: number;
+  specialties: ReefSpecialtyId[];
+}): Promise<LiveLabCompleteResponse> {
+  const { config, inputUrl, sourceName, confidence, specialties } = options;
+  const service = resolveMarineDetectService(config);
+  if (!service) {
+    throw new Error("MARINE_DETECT_API_URL is not configured for remote Reef Health Suite inference.");
+  }
+
+  const response = await fetch(`${service.url}/detect/url`, {
+    method: "POST",
+    headers: buildMarineDetectHeaders(service, true),
+    body: JSON.stringify({
+      inputUrl,
+      sourceName,
+      confidence,
+      specialties,
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(`Remote reef-health service error: ${details || response.statusText}`);
+  }
+
+  return (await response.json()) as LiveLabCompleteResponse;
 }
 
 async function requestVideoUploadUrl(fileName: string, config: ServerConfig) {
@@ -810,21 +904,10 @@ export async function POST(request: Request) {
   const contentType = request.headers.get("content-type") || "";
 
   if (contentType.includes("application/json")) {
-    if (!config.apiKey) {
-      return NextResponse.json(
-        {
-          error:
-            "ROBOFLOW_API_KEY is not configured for the Next.js server. Add it to your deployment environment or local env file and restart the app.",
-        },
-        { status: 500 },
-      );
-    }
-
     const body = (await request.json()) as StartVideoJobRequest;
     const detector = getDetectorOption(body.detectorId ?? DEFAULT_DETECTOR_ID);
-    if (detector.kind !== "hosted") {
-      return NextResponse.json({ error: "The Reef Health Suite does not start remote hosted video jobs." }, { status: 400 });
-    }
+    const confidence = clampConfidence(Number(body.confidence ?? DEFAULT_CONFIDENCE));
+    const specialties = normalizeReefSpecialties(body.specialties);
 
     if (body.intent !== "start-video-job") {
       return NextResponse.json({ error: "Unsupported Live Lab request intent." }, { status: 400 });
@@ -833,6 +916,34 @@ export async function POST(request: Request) {
     const inputUrl = body.inputUrl?.trim();
     if (!inputUrl) {
       return NextResponse.json({ error: "A public upload URL is required to start video inference." }, { status: 400 });
+    }
+
+    if (detector.kind === "local") {
+      try {
+        const sourceName = sanitizeSourceName(body.sourceName, "uploaded-video.mp4");
+        return NextResponse.json(
+          await runRemoteReefHealthSuiteFromUrl({
+            config,
+            inputUrl,
+            sourceName,
+            confidence,
+            specialties,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Remote reef-health video setup failed.";
+        return NextResponse.json({ error: message }, { status: 500 });
+      }
+    }
+
+    if (!config.apiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "ROBOFLOW_API_KEY is not configured for the Next.js server. Add it to your deployment environment or local env file and restart the app.",
+        },
+        { status: 500 },
+      );
     }
 
     try {
@@ -871,6 +982,17 @@ export async function POST(request: Request) {
 
   if (detector.kind === "local") {
     try {
+      if (resolveMarineDetectService(config)) {
+        return NextResponse.json(
+          await runRemoteReefHealthSuiteUpload({
+            config,
+            file,
+            confidence,
+            specialties,
+          }),
+        );
+      }
+
       return NextResponse.json(
         await runLocalReefHealthSuite({
           config,
@@ -880,7 +1002,7 @@ export async function POST(request: Request) {
         }),
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Local reef-health detection failed.";
+      const message = error instanceof Error ? error.message : "Reef-health detection failed.";
       return NextResponse.json({ error: message }, { status: 500 });
     }
   }
@@ -970,5 +1092,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
 
 

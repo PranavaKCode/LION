@@ -111,7 +111,7 @@ function getOverlayPredictions(overlay: LiveLabOverlay | null, currentTime: numb
 
 function normalizeFetchError(error: unknown) {
   if (error instanceof Error && error.message === "Failed to fetch") {
-    return "The upload request could not reach the remote storage service. Large deployed videos need Vercel Blob configured, while local suite runs should stay on your machine.";
+    return "The upload request could not reach the remote detector path. Large deployed videos still need Vercel Blob configured, and Reef Health Suite remote runs need MARINE_DETECT_API_URL reachable from the app.";
   }
 
   return error instanceof Error ? error.message : "Detection failed.";
@@ -152,7 +152,13 @@ async function uploadVideoToBlob(file: File) {
   });
 }
 
-async function startRemoteVideoJob(inputUrl: string, sourceName: string, detectorId: DetectorId) {
+async function startRemoteVideoJob(
+  inputUrl: string,
+  sourceName: string,
+  detectorId: DetectorId,
+  specialties: ReefSpecialtyId[],
+  confidence: number,
+) {
   const response = await fetch("/api/live-lab/detect", {
     method: "POST",
     headers: {
@@ -163,6 +169,8 @@ async function startRemoteVideoJob(inputUrl: string, sourceName: string, detecto
       inputUrl,
       sourceName,
       detectorId,
+      specialties,
+      confidence,
     }),
   });
 
@@ -172,7 +180,7 @@ async function startRemoteVideoJob(inputUrl: string, sourceName: string, detecto
 function shouldUseServerProxy(file: File, detectorId: DetectorId) {
   const detector = getDetectorOption(detectorId);
   if (detector.kind === "local") {
-    return true;
+    return isLocalOrigin() || file.size <= SERVER_PROXY_VIDEO_LIMIT_BYTES;
   }
 
   return isLocalOrigin() || file.size <= SERVER_PROXY_VIDEO_LIMIT_BYTES;
@@ -375,7 +383,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
       if (selectedFile.type.startsWith("video/")) {
         if (shouldUseServerProxy(selectedFile, selectedDetectorId)) {
           if (isLocalSuite) {
-            setProgressMessage("Running the local reef-health suite with your selected model specialties...");
+            setProgressMessage("Sending this upload through the Reef Health Suite path...");
           } else {
             setProgressMessage(
               isLocalOrigin()
@@ -387,13 +395,13 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         } else {
           setProgressMessage(`Uploading large ${activeDetector.shortLabel} video to Vercel Blob...`);
           const blob = await uploadVideoToBlob(selectedFile);
-          setProgressMessage(`Starting remote ${activeDetector.shortLabel} video inference...`);
-          payload = await startRemoteVideoJob(blob.url, selectedFile.name, selectedDetectorId);
+          setProgressMessage(isLocalSuite ? "Starting remote Reef Health Suite video inference..." : `Starting remote ${activeDetector.shortLabel} video inference...`);
+          payload = await startRemoteVideoJob(blob.url, selectedFile.name, selectedDetectorId, selectedSpecialties, confidence);
         }
       } else {
         setProgressMessage(
           isLocalSuite
-            ? "Running the local reef-health suite on your image..."
+            ? "Sending image to the Reef Health Suite path..."
             : `Sending image to the hosted ${activeDetector.shortLabel} detector...`,
         );
         payload = await runServerUpload(selectedFile, confidence, selectedDetectorId, selectedSpecialties);
@@ -478,7 +486,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <p className={styles.cardTopline}>Upload dock</p>
         <h3>Choose a reef clip or still image and route it through the right detector stack.</h3>
         <p>
-          Hosted invasive-species passes stay deployment-friendly, while the local Reef Health Suite can combine your
+          Hosted invasive-species passes stay deployment-friendly, while the Reef Health Suite can call a remote marine-detect service or combine your
           FishInv and MegaFauna weights when you want broader ecosystem-health reads.
         </p>
 
@@ -535,7 +543,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
                 );
               })}
             </div>
-            <p className={styles.detectorDescription}>The local suite is designed for on-machine YOLO runs and is not part of the deployed serverless path.</p>
+            <p className={styles.detectorDescription}>The Reef Health Suite uses a remote marine-detect service when MARINE_DETECT_API_URL is configured. Without that service, it falls back to the local Python runner on your machine.</p>
           </div>
         ) : null}
 
@@ -733,7 +741,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
           <p className={styles.cardTopline}>Current page state</p>
           <ul className={styles.noteList}>
             <li>Lionfish and Crown of Thorns use hosted Roboflow models that stay deployment-friendly for images and videos.</li>
-            <li>The Reef Health Suite is local-first and can combine FishInv and MegaFauna YOLO weights through the local Python runner.</li>
+            <li>The Reef Health Suite can run through a remote marine-detect service when configured, or fall back to the local Python runner for FishInv and MegaFauna.</li>
             <li>The browser renders returned detections over the selected media so the page stays app-like even when output files are not published.</li>
           </ul>
         </article>
@@ -741,3 +749,4 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     </div>
   );
 }
+

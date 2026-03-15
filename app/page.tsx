@@ -3,7 +3,7 @@ import Image from "next/image";
 import styles from "./page.module.css";
 import { LiveLab } from "./components/live-lab";
 import { UnderseaNetwork } from "./components/undersea-network";
-import { DETECTOR_OPTIONS, REEF_GALLERY_SPECIES } from "./lib/detector-config";
+import { DETECTOR_OPTIONS, REEF_GALLERY_SPECIES, type GallerySpeciesCard } from "./lib/detector-config";
 import { getLionMetrics } from "./lib/lion-data";
 
 const architectureSteps = [
@@ -19,8 +19,8 @@ const architectureSteps = [
   },
   {
     step: "03",
-    title: "Hosted or local inference",
-    description: "Deployment-safe Roboflow passes handle invasive-species lanes, while the local suite can combine FishInv and MegaFauna weights.",
+    title: "Hosted or service inference",
+    description: "Hosted Roboflow lanes stay deployment-friendly, while the paired reef-health suite can run through a remote Python service or a local fallback.",
   },
   {
     step: "04",
@@ -73,6 +73,46 @@ function getSpeciesTone(group: string, index: number): CSSProperties {
     "--species-secondary": secondary,
     transform: `rotate(${(index % 3) - 1}deg)`,
   } as CSSProperties;
+}
+
+function renderSpeciesMedia(card: GallerySpeciesCard, index: number) {
+  if (card.imageSrc) {
+    return (
+      <div className={styles.galleryImageShell}>
+        <Image
+          fill
+          unoptimized
+          src={card.imageSrc}
+          alt={card.imageAlt ?? `${card.name} species reference`}
+          className={styles.gallerySpeciesImage}
+          sizes="(max-width: 760px) 100vw, (max-width: 980px) 50vw, 33vw"
+        />
+        <div className={styles.galleryImageShade} />
+        <div className={styles.galleryImageTop}>
+          <span className={styles.speciesEyebrow}>{card.group}</span>
+          <span className={styles.placeholderPill}>Live media</span>
+        </div>
+        <div className={styles.galleryImageBottom}>
+          <span className={styles.fileChip}>{card.badge}</span>
+          <span className={styles.fileChip}>{card.name}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.speciesVisual} style={getSpeciesTone(card.group, index)}>
+      <div className={styles.speciesVisualTop}>
+        <span className={styles.speciesEyebrow}>{card.group}</span>
+        <span className={styles.placeholderPill}>Placeholder</span>
+      </div>
+      <strong className={styles.speciesGlyph}>{getSpeciesGlyph(card.name)}</strong>
+      <div className={styles.speciesBadgeRow}>
+        <span className={styles.fileChip}>{card.badge}</span>
+        <span className={styles.fileChip}>N/A reel</span>
+      </div>
+    </div>
+  );
 }
 
 export default async function Home() {
@@ -128,8 +168,8 @@ export default async function Home() {
             </h1>
             <p className={styles.heroText}>
               L.I.O.N. now routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
-              crown-of-thorns watch, and a local reef-health suite that can combine your FishInv and MegaFauna models
-              for broader Indo-Pacific ecosystem monitoring.
+              crown-of-thorns watch, and a marine-detect-style Reef Health Suite that can run through a remote Python
+              service or a local fallback using your FishInv and MegaFauna models.
             </p>
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#live-lab">
@@ -207,8 +247,8 @@ export default async function Home() {
             <h2>From raw reef footage to decision-ready overlays.</h2>
             <p>
               The flow now supports narrow invasive-species watches and a broader reef-health sweep. Hosted lanes stay
-              deployment-friendly, while the paired local suite opens the door to fish, invertebrate, and megafauna
-              passes without pretending those models are serverless-ready.
+              deployment-friendly, while the paired Reef Health Suite opens a remote-service path for FishInv and
+              MegaFauna without pretending those models belong inside a serverless bundle.
             </p>
           </div>
           <div className={styles.pipelineRow}>
@@ -231,8 +271,8 @@ export default async function Home() {
             <h2>Choose the detector lane that matches the mission.</h2>
             <p>
               The Live Lab now works more like an operations surface. Pick a hosted invasive-species detector for
-              deployment-safe uploads, or switch into the local Reef Health Suite and choose which specialty models to
-              combine before running a broader ecosystem scan.
+              deployment-safe uploads, or switch into the Reef Health Suite and run FishInv and MegaFauna through a
+              remote marine-detect service when one is configured.
             </p>
           </div>
 
@@ -242,40 +282,31 @@ export default async function Home() {
         <section className={`${styles.sectionBlock} ${styles.gallerySection}`} id="gallery">
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Detection gallery</p>
-            <h2>Species slots for the reef-health catalog, not fake detections.</h2>
+            <h2>Species slots that can now hold real media.</h2>
             <p>
-              These cards now represent the species classes L.I.O.N. is being shaped around. They are intentionally
-              labeled as placeholders until each class gets real footage and real detection metadata wired in.
+              The gallery can now swap from graphic placeholder cards to actual species imagery as assets become
+              available. The first lionfish slot is using live media now, and the remaining species cards stay clearly
+              labeled as placeholders until their local images are added.
             </p>
           </div>
 
           <div className={styles.galleryGrid}>
             {REEF_GALLERY_SPECIES.map((card, index) => (
               <article key={card.name} className={`${styles.card} ${styles.galleryCard} ${styles.gallerySpeciesCard}`}>
-                <div className={styles.speciesVisual} style={getSpeciesTone(card.group, index)}>
-                  <div className={styles.speciesVisualTop}>
-                    <span className={styles.speciesEyebrow}>{card.group}</span>
-                    <span className={styles.placeholderPill}>Placeholder</span>
-                  </div>
-                  <strong className={styles.speciesGlyph}>{getSpeciesGlyph(card.name)}</strong>
-                  <div className={styles.speciesBadgeRow}>
-                    <span className={styles.fileChip}>{card.badge}</span>
-                    <span className={styles.fileChip}>N/A reel</span>
-                  </div>
-                </div>
+                {renderSpeciesMedia(card, index)}
                 <div className={`${styles.galleryMeta} ${styles.galleryMetaColumn}`}>
                   <div className={styles.galleryMetaHead}>
                     <div>
                       <h3>{card.name}</h3>
                       <p>{`${card.role} / ${card.group}`}</p>
                     </div>
-                    <span className={styles.fileChip}>species slot</span>
+                    <span className={styles.fileChip}>{card.imageSrc ? "media loaded" : "species slot"}</span>
                   </div>
                   <p className={styles.galleryDescription}>{card.highlight}</p>
                   <div className={styles.galleryTags}>
                     <span className={styles.fileChip}>{card.badge}</span>
-                    <span className={styles.fileChip}>preview / N/A</span>
-                    <span className={styles.fileChip}>detector ready</span>
+                    <span className={styles.fileChip}>{card.imageSrc ? "reference asset" : "preview / N/A"}</span>
+                    <span className={styles.fileChip}>{card.imageSrc ? "gallery image" : "detector ready"}</span>
                   </div>
                 </div>
               </article>
@@ -353,7 +384,7 @@ export default async function Home() {
                   <strong>{metrics.manifestPath}</strong>
                 </div>
                 <div className={styles.miniMetricCompact}>
-                  <span>Local suite</span>
+                  <span>Remote suite</span>
                   <strong>{localSuiteLabel}</strong>
                 </div>
               </div>
@@ -379,7 +410,7 @@ export default async function Home() {
           <div className={styles.footerGrid}>
             <div className={`${styles.card} ${styles.footerCard}`}>
               <h3>Project</h3>
-              <p>Hosted lionfish and crown-of-thorns detection plus a local paired suite for Indo-Pacific reef indicators.</p>
+              <p>Hosted lionfish and crown-of-thorns detection plus a remote-capable paired suite for Indo-Pacific reef indicators.</p>
             </div>
             <div className={`${styles.card} ${styles.footerCard}`}>
               <h3>Reference output</h3>
@@ -411,17 +442,7 @@ export default async function Home() {
       <section className={styles.mobileOnlySummary}>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
           <p className={styles.cardTopline}>Species slot</p>
-          <div className={styles.speciesVisual} style={getSpeciesTone(mobileSpecies.group, 0)}>
-            <div className={styles.speciesVisualTop}>
-              <span className={styles.speciesEyebrow}>{mobileSpecies.group}</span>
-              <span className={styles.placeholderPill}>Placeholder</span>
-            </div>
-            <strong className={styles.speciesGlyph}>{getSpeciesGlyph(mobileSpecies.name)}</strong>
-            <div className={styles.speciesBadgeRow}>
-              <span className={styles.fileChip}>{mobileSpecies.badge}</span>
-              <span className={styles.fileChip}>N/A reel</span>
-            </div>
-          </div>
+          {renderSpeciesMedia(mobileSpecies, 0)}
           <p className={styles.mobileCaption}>{mobileSpecies.highlight}</p>
         </article>
         <article className={`${styles.card} ${styles.mobileAnalyticsCard}`}>
