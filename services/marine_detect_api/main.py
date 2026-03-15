@@ -333,6 +333,10 @@ def download_input(input_url: str, destination: Path) -> None:
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"status": "ok", "service": "L.I.O.N. Marine Detect Service"}
+
 
 @app.post("/detect/upload")
 def detect_upload(
@@ -362,3 +366,4 @@ def detect_url(payload: DetectFromUrlRequest, authorization: str | None = Header
         except Exception as exc:  # pragma: no cover - network failures depend on deployment
             raise HTTPException(status_code=400, detail=f"Could not download remote input: {exc}") from exc
         return execute_local_predict(input_path, inferred_name, clamp_confidence(payload.confidence), payload.specialties)
+
