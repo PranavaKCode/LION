@@ -150,14 +150,10 @@ export default async function Home() {
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>Undersea reef-health control room</p>
             <h1 className={styles.heroTitle}>
-              Track reef health, invasive outbreaks, and indicator species
+              Track reef health, invasive outbreak
               <span className={styles.heroAccent}>from one living marine dashboard.</span>
             </h1>
-            <p className={styles.heroText}>
-              L.I.O.N. now routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
-              crown-of-thorns watch, and a marine-detect-style Reef Health Suite that can run through a remote Python
-              service or a local fallback using your FishInv and MegaFauna models.
-            </p>
+        
             <div className={styles.heroActions}>
               <a className={styles.primaryButton} href="#live-lab">
                 Open Live Lab
@@ -229,9 +225,16 @@ export default async function Home() {
               <div className={styles.consoleMiniChip}>Multi-species monitoring surface</div>
               <div className={styles.consoleMiniChip}>Real-time alert review</div>
               <div className={styles.consoleMiniChip}>Field footage + lab validation</div>
-               <div className={styles.consoleMiniChip}> L.I.O.N. turns raw underwater footage into real-time detections, 
-                browser overlays, and structured run metadata that scientists can review fast. 
-                Built to identify any invasive marine species — the moment they arrive.</div>
+               <div className={styles.consoleMiniChip}>
+                L.I.O.N. turns raw underwater footage into real-time detections, browser overlays, and structured run
+                metadata that scientists can review fast. Built to identify any invasive marine species - the moment
+                they arrive.
+                <br />
+                <br />
+                L.I.O.N. now routes footage through multiple marine-detection lanes: a hosted lionfish watch, a hosted
+                crown-of-thorns watch, and a marine-detect-style Reef Health Suite that can run through a remote
+                Python service or a local fallback using your FishInv and MegaFauna models.
+                </div>
             </div>
           </div>
         </section>
