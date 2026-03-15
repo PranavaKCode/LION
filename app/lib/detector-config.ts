@@ -30,13 +30,16 @@ export type GallerySpeciesCard = {
   highlight: string;
   badge: string;
   seconds: number;
+  imageSrc?: string;
+  imageAlt?: string;
 };
 
 const REEF_HEALTH_SPECIALTIES = [
   {
     id: "fish-invertebrates",
     label: "Fish + Invertebrates",
-    description: "Butterfly fish, grouper, parrotfish, snapper, moray eel, sweet lips, crown of thorns, giant clam, urchin, sea cucumber, lobster, and related indicators.",
+    description:
+      "Butterfly fish, grouper, parrotfish, snapper, moray eel, sweet lips, crown of thorns, giant clam, urchin, sea cucumber, lobster, and related indicators.",
     badge: "bio-indicator sweep",
     species: [
       "Butterfly Fish",
@@ -59,7 +62,8 @@ const REEF_HEALTH_SPECIALTIES = [
   {
     id: "megafauna",
     label: "MegaFauna + Rare Species",
-    description: "Sharks, sea turtles, rays, and other larger rare-fauna passes that help frame overall reef health.",
+    description:
+      "Sharks, sea turtles, rays, and other larger rare-fauna passes that help frame overall reef health.",
     badge: "megafauna watch",
     species: ["Shark", "Sea Turtle", "Ray"],
   },
@@ -93,7 +97,8 @@ export const DETECTOR_OPTIONS = [
     kind: "local",
     label: "Reef Health Suite",
     shortLabel: "Reef Suite",
-    description: "Local multi-model YOLO sweep for fish, invertebrates, mega fauna, and rare species that act as ecosystem-health signals.",
+    description:
+      "Marine-detect-style paired suite for fish, invertebrates, mega fauna, and rare species. It uses a remote Python service when MARINE_DETECT_API_URL is configured, or falls back to the local YOLO runner.",
     specialties: REEF_HEALTH_SPECIALTIES,
     gallerySpecies: [
       "Butterfly Fish",
@@ -124,6 +129,8 @@ export const REEF_GALLERY_SPECIES: readonly GallerySpeciesCard[] = [
     highlight: "Early capture supports preventative removal before spread.",
     badge: "rapid response",
     seconds: 0.6,
+    imageSrc: "/media/Live_demo.gif",
+    imageAlt: "Lionfish detection demo feed",
   },
   {
     name: "Crown of Thorns",
@@ -227,4 +234,3 @@ export function normalizeReefSpecialties(values: string[] | null | undefined) {
 
   return normalized.length ? normalized : [...DEFAULT_REEF_SPECIALTIES];
 }
-
