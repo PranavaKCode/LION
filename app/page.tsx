@@ -62,14 +62,14 @@ export default async function Home() {
       </div>
 
       <div className={styles.pageFrame}>
-        <div className={styles.watermark}>L.I.O.N. / Lionfish Identification and Oceanic Notation</div>
+        <div className={styles.watermark}>L.I.O.N. / Live Invasive-species Observation Network</div>
 
         <header className={`${styles.card} ${styles.topNav}`}>
           <div className={styles.brandBlock}>
             <div className={styles.brandBadge}>L</div>
             <div>
               <div className={styles.brandName}>L.I.O.N.</div>
-              <div className={styles.brandSubtitle}>Hybrid marine ML operations home</div>
+              <div className={styles.brandSubtitle}>REAL-TIME 24/7 WORLDWIDE DETECTION</div>
             </div>
           </div>
           <nav className={styles.navLinks} aria-label="Primary">
@@ -88,8 +88,8 @@ export default async function Home() {
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>Undersea detection control surface</p>
             <h1 className={styles.heroTitle}>
-              Catch lionfish
-              <span className={styles.heroAccent}>before they disappear into the reef.</span>
+              Detect invasive species
+              <span className={styles.heroAccent}>before they damage ecosystems.</span>
             </h1>
             <p className={styles.heroText}>
              
@@ -129,7 +129,7 @@ export default async function Home() {
                 <span />
                 <span />
               </div>
-              <div className={styles.consoleTitle}>Reef Watch / Active preview feed</div>
+              <div className={styles.consoleTitle}>Reef Watch / Active annotated feed</div>
               <div className={`${styles.consoleChip} ${styles.consoleChipCoral}`}>Live demo</div>
             </div>
             <div className={styles.heroMediaFrame}>
@@ -153,9 +153,9 @@ export default async function Home() {
               <div className={styles.consoleMiniChip}>Multi-species monitoring surface</div>
               <div className={styles.consoleMiniChip}>Real-time alert review</div>
               <div className={styles.consoleMiniChip}>Field footage + lab validation</div>
-               <div className={styles.consoleMiniChip}> L.I.O.N. turns raw underwater footage into hosted detections, browser overlays, and structured run metadata
-              that scientists can review fast. The page leads like an actual field-ready web app, not a passive
-              marketing brochure.</div>
+               <div className={styles.consoleMiniChip}> L.I.O.N. turns raw underwater footage into real-time detections, 
+                browser overlays, and structured run metadata that scientists can review fast. 
+                Built to identify any invasive marine species — the moment they arrive.</div>
             </div>
           </div>
         </section>
