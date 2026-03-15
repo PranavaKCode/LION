@@ -44,3 +44,8 @@ next-env.d.ts
 # live lab outputs
 /public/live-lab-output/
 
+
+# local runtime artifacts
+/.tmp*/
+/.venv*/
+

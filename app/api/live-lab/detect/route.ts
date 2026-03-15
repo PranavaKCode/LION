@@ -46,6 +46,11 @@ type VideoPredictionPayload = {
   }>;
 };
 
+type ServerConfig = {
+  apiKey?: string;
+  pythonCommand: string;
+};
+
 function sanitizeFilename(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -79,6 +84,66 @@ function toPublicUrl(absolutePath: string, publicDir: string) {
   }
 
   return `/${relativePath.replace(/\\/g, "/")}`;
+}
+
+function parseEnvFile(raw: string) {
+  const values: Record<string, string> = {};
+
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    let value = trimmed.slice(separatorIndex + 1).trim();
+    if (!key) {
+      continue;
+    }
+
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    values[key] = value;
+  }
+
+  return values;
+}
+
+async function resolveServerConfig(): Promise<ServerConfig> {
+  const envFromProcess = {
+    apiKey: process.env.ROBOFLOW_API_KEY,
+    pythonCommand: process.env.LIONFISH_PYTHON_BIN,
+  };
+
+  if (envFromProcess.apiKey && envFromProcess.pythonCommand) {
+    return {
+      apiKey: envFromProcess.apiKey,
+      pythonCommand: envFromProcess.pythonCommand,
+    };
+  }
+
+  const envFiles = [path.join(process.cwd(), ".env.local"), path.join(process.cwd(), ".env")];
+  const envFromFiles: Record<string, string> = {};
+
+  for (const envFile of envFiles) {
+    try {
+      Object.assign(envFromFiles, parseEnvFile(await readFile(envFile, "utf8")));
+    } catch {
+      // Ignore missing local env files and continue with other sources.
+    }
+  }
+
+  return {
+    apiKey: envFromProcess.apiKey || envFromFiles.ROBOFLOW_API_KEY,
+    pythonCommand: envFromProcess.pythonCommand || envFromFiles.LIONFISH_PYTHON_BIN || "python",
+  };
 }
 
 function collectConfidences(payload: ImagePredictionPayload | VideoPredictionPayload | null) {
@@ -156,11 +221,15 @@ function buildResult(options: {
   };
 }
 
-function runLionfishProcess(command: string, args: string[]) {
+function runLionfishProcess(command: string, args: string[], config: ServerConfig) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: process.cwd(),
-      env: process.env,
+      env: {
+        ...process.env,
+        ...(config.apiKey ? { ROBOFLOW_API_KEY: config.apiKey } : {}),
+        LIONFISH_PYTHON_BIN: config.pythonCommand,
+      },
       windowsHide: true,
     });
 
@@ -191,7 +260,9 @@ function runLionfishProcess(command: string, args: string[]) {
 }
 
 export async function POST(request: Request) {
-  if (!process.env.ROBOFLOW_API_KEY) {
+  const serverConfig = await resolveServerConfig();
+
+  if (!serverConfig.apiKey) {
     return NextResponse.json(
       {
         error:
@@ -229,27 +300,30 @@ export async function POST(request: Request) {
   const outputRoot = path.join(publicDir, "live-lab-output", jobId);
   const tempRoot = path.join(os.tmpdir(), "lion-live-lab", jobId);
   const uploadPath = path.join(tempRoot, sanitizeFilename(file.name || `upload-${jobId}`));
-  const pythonCommand = process.env.LIONFISH_PYTHON_BIN || "python";
 
   try {
     await mkdir(outputRoot, { recursive: true });
     await mkdir(tempRoot, { recursive: true });
     await writeFile(uploadPath, Buffer.from(await file.arrayBuffer()));
 
-    await runLionfishProcess(pythonCommand, [
-      "lionfish_yolo.py",
-      "hosted-predict",
-      "--preset",
-      "lionfish",
-      "--source",
-      uploadPath,
-      "--output-root",
-      outputRoot,
-      "--run-name",
-      "result",
-      "--conf",
-      confidence.toFixed(2),
-    ]);
+    await runLionfishProcess(
+      serverConfig.pythonCommand,
+      [
+        "lionfish_yolo.py",
+        "hosted-predict",
+        "--preset",
+        "lionfish",
+        "--source",
+        uploadPath,
+        "--output-root",
+        outputRoot,
+        "--run-name",
+        "result",
+        "--conf",
+        confidence.toFixed(2),
+      ],
+      serverConfig,
+    );
 
     const manifestPath = path.join(outputRoot, "last_run.json");
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ManifestPayload;
