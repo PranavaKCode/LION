@@ -42,6 +42,7 @@ function formatPreviewTime(totalSeconds: number) {
 export default async function Home() {
   const metrics = await getLionMetrics();
   const videoSrc = "/media/lionfish-demo.mp4";
+  const liveDemoGifSrc = "/media/Live_demo.gif";
   const galleryCards = galleryMoments.map((time, index) => ({
     title: `Preview frame ${index + 1}`,
     label: formatPreviewTime(time),
@@ -134,7 +135,7 @@ export default async function Home() {
               <div className={`${styles.consoleChip} ${styles.consoleChipCoral}`}>Live demo</div>
             </div>
             <div className={styles.heroMediaFrame}>
-              <video className={styles.fullVideo} src={videoSrc} autoPlay muted loop playsInline preload="metadata" />
+              <img className={styles.fullVideo} src={liveDemoGifSrc} alt="Live reef monitoring demo" />
               <div className={styles.heroOverlayCards}>
                 <div className={styles.overlayCard}>
                   <span className={styles.statLabel}>Source clip</span>
