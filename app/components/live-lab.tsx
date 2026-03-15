@@ -2,7 +2,7 @@
 
 import { upload } from "@vercel/blob/client";
 import Image from "next/image";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import styles from "../page.module.css";
 import {
   DEFAULT_DETECTOR_ID,
@@ -15,6 +15,8 @@ import {
 import type { LionMetrics } from "../lib/lion-data";
 import type {
   LiveLabApiResponse,
+  LiveLabCompleteResponse,
+  LiveLabNotification,
   LiveLabOverlay,
   LiveLabPrediction,
   LiveLabResult,
@@ -39,7 +41,24 @@ type PanelSize = {
   height: number;
 };
 
+type InboxEntry = {
+  id: string;
+  timestamp: string;
+  detectorLabel: string;
+  sourceName: string;
+  detectionCount: string;
+  maxConfidence: string;
+  classes: string[];
+  notifyEmail: string | null;
+  notificationStatus: "sent" | "failed" | "not-requested";
+  notificationDetail: string;
+};
+
 const SERVER_PROXY_VIDEO_LIMIT_BYTES = 4 * 1024 * 1024;
+const INBOX_STORAGE_KEY = "lion-live-lab-inbox";
+const NOTIFY_EMAIL_STORAGE_KEY = "lion-live-lab-notify-email";
+const NOTIFY_ENABLED_STORAGE_KEY = "lion-live-lab-notify-enabled";
+const MAX_INBOX_ENTRIES = 10;
 
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -51,6 +70,79 @@ function formatBytes(bytes: number) {
   }
 
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function normalizeClientEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function formatInboxTimestamp(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function summarizeResultClasses(result: LiveLabResult) {
+  const classCounts = new Map<string, number>();
+
+  if (result.overlay?.kind === "image") {
+    for (const prediction of result.overlay.predictions) {
+      classCounts.set(prediction.className, (classCounts.get(prediction.className) ?? 0) + 1);
+    }
+  }
+
+  if (result.overlay?.kind === "video") {
+    for (const frame of result.overlay.frames) {
+      for (const prediction of frame.predictions) {
+        classCounts.set(prediction.className, (classCounts.get(prediction.className) ?? 0) + 1);
+      }
+    }
+  }
+
+  if (!classCounts.size) {
+    return ["No detections returned"];
+  }
+
+  return [...classCounts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 8)
+    .map(([className, count]) => `${className} x${count}`);
+}
+
+function buildInboxEntry(options: {
+  detectorLabel: string;
+  notifyEmail: string | null;
+  notification?: LiveLabNotification;
+  result: LiveLabResult;
+}) {
+  const { detectorLabel, notifyEmail, notification, result } = options;
+  const timestamp = notification?.timestamp ?? new Date().toISOString();
+
+  return {
+    id: `${timestamp}-${result.sourceName}-${result.model}`,
+    timestamp,
+    detectorLabel,
+    sourceName: result.sourceName,
+    detectionCount: result.detectionCount,
+    maxConfidence: result.maxConfidence,
+    classes: summarizeResultClasses(result),
+    notifyEmail: notification?.email ?? notifyEmail,
+    notificationStatus: notification?.status ?? "not-requested",
+    notificationDetail:
+      notification?.detail ?? "Detection log saved to the in-app inbox. No email notification was requested.",
+  } satisfies InboxEntry;
 }
 
 function isLocalOrigin() {
@@ -125,13 +217,22 @@ async function parseResponse(response: Response) {
   return payload;
 }
 
-async function runServerUpload(file: File, confidence: number, detectorId: DetectorId, specialties: ReefSpecialtyId[]) {
+async function runServerUpload(
+  file: File,
+  confidence: number,
+  detectorId: DetectorId,
+  specialties: ReefSpecialtyId[],
+  notifyEmail: string | null,
+) {
   const formData = new FormData();
   formData.set("file", file);
   formData.set("confidence", confidence.toFixed(2));
   formData.set("detectorId", detectorId);
   for (const specialty of specialties) {
     formData.append("specialties", specialty);
+  }
+  if (notifyEmail) {
+    formData.set("notifyEmail", notifyEmail);
   }
 
   const response = await fetch("/api/live-lab/detect", {
@@ -158,6 +259,7 @@ async function startRemoteVideoJob(
   detectorId: DetectorId,
   specialties: ReefSpecialtyId[],
   confidence: number,
+  notifyEmail: string | null,
 ) {
   const response = await fetch("/api/live-lab/detect", {
     method: "POST",
@@ -171,6 +273,7 @@ async function startRemoteVideoJob(
       detectorId,
       specialties,
       confidence,
+      notifyEmail,
     }),
   });
 
@@ -199,6 +302,13 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(0.25);
   const [result, setResult] = useState<LiveLabResult | null>(null);
+  const [lastNotification, setLastNotification] = useState<LiveLabNotification | null>(null);
+  const [notifyByEmail, setNotifyByEmail] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState("");
+  const [pendingNotifyEmail, setPendingNotifyEmail] = useState<string | null>(null);
+  const [pendingDetectorLabel, setPendingDetectorLabel] = useState<string | null>(null);
+  const [inboxEntries, setInboxEntries] = useState<InboxEntry[]>([]);
+  const [storageReady, setStorageReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [jobState, setJobState] = useState<PollingJob | null>(null);
@@ -208,6 +318,65 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
 
   const activeDetector = getDetectorOption(selectedDetectorId);
   const isLocalSuite = activeDetector.kind === "local";
+  const selectedSpecialtyLabels = activeDetector.specialties
+    ?.filter((specialty) => selectedSpecialties.includes(specialty.id))
+    .map((specialty) => specialty.label)
+    .join(" + ");
+  const detectorRunLabel =
+    activeDetector.specialties && selectedSpecialtyLabels
+      ? `${activeDetector.label} / ${selectedSpecialtyLabels}`
+      : activeDetector.label;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const inboxRaw = window.localStorage.getItem(INBOX_STORAGE_KEY);
+      if (inboxRaw) {
+        const parsed = JSON.parse(inboxRaw);
+        if (Array.isArray(parsed)) {
+          setInboxEntries(parsed.slice(0, MAX_INBOX_ENTRIES) as InboxEntry[]);
+        }
+      }
+
+      const storedEmail = window.localStorage.getItem(NOTIFY_EMAIL_STORAGE_KEY);
+      if (storedEmail) {
+        setNotifyEmail(storedEmail);
+      }
+
+      setNotifyByEmail(window.localStorage.getItem(NOTIFY_ENABLED_STORAGE_KEY) === "true");
+    } catch {
+      // Ignore malformed local storage and fall back to defaults.
+    } finally {
+      setStorageReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(INBOX_STORAGE_KEY, JSON.stringify(inboxEntries.slice(0, MAX_INBOX_ENTRIES)));
+  }, [inboxEntries, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(NOTIFY_EMAIL_STORAGE_KEY, notifyEmail);
+  }, [notifyEmail, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(NOTIFY_ENABLED_STORAGE_KEY, notifyByEmail ? "true" : "false");
+  }, [notifyByEmail, storageReady]);
 
   useEffect(() => {
     return () => {
@@ -243,6 +412,36 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     };
   }, []);
 
+  const recordInboxEntry = useCallback((entry: InboxEntry) => {
+    setInboxEntries((current) => [entry, ...current.filter((item) => item.id !== entry.id)].slice(0, MAX_INBOX_ENTRIES));
+  }, []);
+
+  const handleCompletedPayload = useCallback((
+    payload: LiveLabCompleteResponse,
+    detectorLabel: string,
+    notifyEmailForRun: string | null,
+  ) => {
+    setResult(payload.result);
+    setLastNotification(payload.notification ?? null);
+    recordInboxEntry(
+      buildInboxEntry({
+        detectorLabel,
+        notifyEmail: notifyEmailForRun,
+        notification: payload.notification,
+        result: payload.result,
+      }),
+    );
+    setPendingNotifyEmail(null);
+    setPendingDetectorLabel(null);
+    setJobState(null);
+    setProgressMessage(null);
+    setIsRunning(false);
+  }, [recordInboxEntry]);
+
+  function clearInbox() {
+    setInboxEntries([]);
+  }
+
   useEffect(() => {
     if (!jobState || !selectedFile) {
       return;
@@ -260,6 +459,9 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
           sourceName: selectedFile.name,
           detectorId: selectedDetectorId,
         });
+        if (pendingNotifyEmail) {
+          params.set("notifyEmail", pendingNotifyEmail);
+        }
 
         const response = await fetch(`/api/live-lab/detect?${params.toString()}`, {
           cache: "no-store",
@@ -267,10 +469,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         const payload = await parseResponse(response);
 
         if (payload.status === "complete") {
-          setResult(payload.result);
-          setJobState(null);
-          setProgressMessage(null);
-          setIsRunning(false);
+          handleCompletedPayload(payload, pendingDetectorLabel ?? activeDetector.label, pendingNotifyEmail);
           return;
         }
 
@@ -284,6 +483,8 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         setJobState(null);
         setProgressMessage(null);
         setIsRunning(false);
+        setPendingNotifyEmail(null);
+        setPendingDetectorLabel(null);
       }
     }, jobState.pollAfterMs);
 
@@ -292,7 +493,16 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         window.clearTimeout(pollTimerRef.current);
       }
     };
-  }, [jobState, confidence, selectedDetectorId, selectedFile]);
+  }, [
+    activeDetector.label,
+    confidence,
+    handleCompletedPayload,
+    jobState,
+    pendingDetectorLabel,
+    pendingNotifyEmail,
+    selectedDetectorId,
+    selectedFile,
+  ]);
 
   function clearSelection() {
     if (previewUrl) {
@@ -307,10 +517,13 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     setSelectedFile(null);
     setPreviewUrl(null);
     setResult(null);
+    setLastNotification(null);
     setErrorMessage(null);
     setIsRunning(false);
     setJobState(null);
     setProgressMessage(null);
+    setPendingNotifyEmail(null);
+    setPendingDetectorLabel(null);
     setCurrentTime(0);
 
     if (inputRef.current) {
@@ -343,10 +556,13 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
       setSelectedFile(null);
       setPreviewUrl(null);
       setResult(null);
+      setLastNotification(null);
       setErrorMessage(null);
       setIsRunning(false);
       setJobState(null);
       setProgressMessage(null);
+      setPendingNotifyEmail(null);
+      setPendingDetectorLabel(null);
       setCurrentTime(0);
       return;
     }
@@ -354,16 +570,30 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     setResult(null);
+    setLastNotification(null);
     setErrorMessage(null);
     setIsRunning(false);
     setJobState(null);
     setProgressMessage(null);
+    setPendingNotifyEmail(null);
+    setPendingDetectorLabel(null);
     setCurrentTime(0);
   }
 
   async function runDetection() {
     if (!selectedFile) {
       setErrorMessage("Choose an image or video before running detection.");
+      return;
+    }
+
+    const normalizedNotifyEmail = notifyByEmail ? normalizeClientEmail(notifyEmail) : null;
+    if (notifyByEmail && !normalizedNotifyEmail) {
+      setErrorMessage("Enter an email address if you want L.I.O.N. to send the detection log.");
+      return;
+    }
+
+    if (normalizedNotifyEmail && !isValidEmail(normalizedNotifyEmail)) {
+      setErrorMessage("Use a valid email address for Live Lab notifications.");
       return;
     }
 
@@ -375,7 +605,10 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     setIsRunning(true);
     setErrorMessage(null);
     setResult(null);
+    setLastNotification(null);
     setJobState(null);
+    setPendingNotifyEmail(normalizedNotifyEmail);
+    setPendingDetectorLabel(detectorRunLabel);
 
     try {
       let payload: LiveLabApiResponse;
@@ -391,12 +624,25 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
                 : `Uploading smaller video through the deployed ${activeDetector.shortLabel} server path...`,
             );
           }
-          payload = await runServerUpload(selectedFile, confidence, selectedDetectorId, selectedSpecialties);
+            payload = await runServerUpload(
+              selectedFile,
+              confidence,
+              selectedDetectorId,
+              selectedSpecialties,
+              normalizedNotifyEmail,
+            );
         } else {
           setProgressMessage(`Uploading large ${activeDetector.shortLabel} video to Vercel Blob...`);
           const blob = await uploadVideoToBlob(selectedFile);
           setProgressMessage(isLocalSuite ? "Starting remote Reef Health Suite video inference..." : `Starting remote ${activeDetector.shortLabel} video inference...`);
-          payload = await startRemoteVideoJob(blob.url, selectedFile.name, selectedDetectorId, selectedSpecialties, confidence);
+            payload = await startRemoteVideoJob(
+              blob.url,
+              selectedFile.name,
+              selectedDetectorId,
+              selectedSpecialties,
+              confidence,
+              normalizedNotifyEmail,
+            );
         }
       } else {
         setProgressMessage(
@@ -404,15 +650,19 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
             ? "Sending image to the Reef Health Suite path..."
             : `Sending image to the hosted ${activeDetector.shortLabel} detector...`,
         );
-        payload = await runServerUpload(selectedFile, confidence, selectedDetectorId, selectedSpecialties);
+          payload = await runServerUpload(
+            selectedFile,
+            confidence,
+            selectedDetectorId,
+            selectedSpecialties,
+            normalizedNotifyEmail,
+          );
       }
 
-      if (payload.status === "complete") {
-        setResult(payload.result);
-        setProgressMessage(null);
-        setIsRunning(false);
-        return;
-      }
+        if (payload.status === "complete") {
+          handleCompletedPayload(payload, detectorRunLabel, normalizedNotifyEmail);
+          return;
+        }
 
       setJobState({
         jobId: payload.jobId,
@@ -421,12 +671,14 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
       });
       setProgressMessage(null);
       setIsRunning(false);
-    } catch (error) {
-      setErrorMessage(normalizeFetchError(error));
-      setProgressMessage(null);
-      setIsRunning(false);
+      } catch (error) {
+        setErrorMessage(normalizeFetchError(error));
+        setProgressMessage(null);
+        setIsRunning(false);
+        setPendingNotifyEmail(null);
+        setPendingDetectorLabel(null);
+      }
     }
-  }
 
   const localPreviewKind: PreviewKind = selectedFile?.type.startsWith("image/") ? "image" : "video";
   const displayKind = result?.annotatedKind ?? localPreviewKind;
@@ -464,7 +716,9 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
       : isRunning
         ? progressMessage ?? "Starting remote detection..."
         : result
-          ? `Detection complete via ${result.model}`
+          ? lastNotification
+            ? `Detection complete via ${result.model}. ${lastNotification.detail}`
+            : `Detection complete via ${result.model}.`
           : "Choose a file, pick a detector, and run detection.";
   const previewTag = result
     ? `${activeDetector.shortLabel.toLowerCase()} detections`
@@ -475,11 +729,6 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         : selectedFile
           ? `${activeDetector.shortLabel.toLowerCase()} input`
           : "demo preview";
-  const selectedSpecialtyLabels = activeDetector.specialties
-    ?.filter((specialty) => selectedSpecialties.includes(specialty.id))
-    .map((specialty) => specialty.label)
-    .join(" + ");
-
   return (
     <div className={styles.liveGrid}>
       <article className={`${styles.card} ${styles.uploadCard}`}>
@@ -588,6 +837,40 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
             onChange={(event) => {
               setConfidence(Number(event.target.value));
             }}
+          />
+        </div>
+        <div className={styles.notifySection}>
+          <label className={styles.notifyToggle} htmlFor={`${inputId}-notify-toggle`}>
+            <input
+              id={`${inputId}-notify-toggle`}
+              className={styles.notifyCheckbox}
+              type="checkbox"
+              checked={notifyByEmail}
+              onChange={(event) => {
+                setNotifyByEmail(event.target.checked);
+                setLastNotification(null);
+              }}
+            />
+            <span>Email me a detection log when this run completes</span>
+          </label>
+          <p className={styles.notifyHint}>
+            When enabled, L.I.O.N. records the completed run in the inbox panel below and sends class, confidence, and timestamp details through the configured SMTP relay.
+          </p>
+          <label className={styles.waitlistLabel} htmlFor={`${inputId}-notify-email`}>
+            Notification email
+          </label>
+          <input
+            id={`${inputId}-notify-email`}
+            className={styles.waitlistInput}
+            type="email"
+            autoComplete="email"
+            placeholder="name@organization.org"
+            value={notifyEmail}
+            onChange={(event) => {
+              setNotifyEmail(event.target.value);
+              setLastNotification(null);
+            }}
+            disabled={!notifyByEmail}
           />
         </div>
         <div className={`${styles.statusBanner} ${statusClassName}`}>{statusMessage}</div>
@@ -744,6 +1027,70 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
             <li>The Reef Health Suite can run through a remote marine-detect service when configured, or fall back to the local Python runner for FishInv and MegaFauna.</li>
             <li>The browser renders returned detections over the selected media so the page stays app-like even when output files are not published.</li>
           </ul>
+        </article>
+        <article className={`${styles.card} ${styles.opsCard} ${styles.inboxCard}`}>
+          <div className={styles.inboxHeaderRow}>
+            <div>
+              <p className={styles.cardTopline}>Notification inbox</p>
+              <h3>Recent detection logs</h3>
+            </div>
+            {inboxEntries.length ? (
+              <button type="button" className={styles.secondaryButton} onClick={clearInbox}>
+                Clear Inbox
+              </button>
+            ) : null}
+          </div>
+          <p className={styles.inboxIntro}>
+            Completed runs land here with their detection summary, delivery target, and email send result so you can review notification history without leaving the Live Lab.
+          </p>
+          <div className={styles.inboxList}>
+            {inboxEntries.length ? (
+              inboxEntries.map((entry) => (
+                <article key={entry.id} className={styles.inboxItem}>
+                  <div className={styles.inboxItemHeader}>
+                    <div>
+                      <strong className={styles.inboxItemTitle}>{entry.detectorLabel}</strong>
+                      <p className={styles.inboxItemSource}>{entry.sourceName}</p>
+                    </div>
+                    <span
+                      className={`${styles.inboxStatusBadge} ${
+                        entry.notificationStatus === "sent"
+                          ? styles.inboxStatusSent
+                          : entry.notificationStatus === "failed"
+                            ? styles.inboxStatusFailed
+                            : styles.inboxStatusIdle
+                      }`}
+                    >
+                      {entry.notificationStatus === "sent"
+                        ? "Email sent"
+                        : entry.notificationStatus === "failed"
+                          ? "Email failed"
+                          : "Inbox only"}
+                    </span>
+                  </div>
+                  <div className={styles.inboxMeta}>
+                    <span>{`Time / ${formatInboxTimestamp(entry.timestamp)}`}</span>
+                    <span>{`Detections / ${entry.detectionCount}`}</span>
+                    <span>{`Peak confidence / ${entry.maxConfidence}`}</span>
+                    <span>{`Target / ${entry.notifyEmail ?? "Not requested"}`}</span>
+                  </div>
+                  <div className={styles.inboxClassRow}>
+                    {entry.classes.map((label) => (
+                      <span key={`${entry.id}-${label}`} className={styles.inboxClassChip}>
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                  <p className={styles.inboxDetail}>{entry.notificationDetail}</p>
+                </article>
+              ))
+            ) : (
+              <div className={styles.inboxEmpty}>
+                <strong>No detection logs yet.</strong>
+                <p>Run the Live Lab once and completed detections will appear here with their email delivery status.</p>
+              </div>
+            )}
+          </div>
         </article>
       </div>
     </div>

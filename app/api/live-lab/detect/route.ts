@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import nodemailer from "nodemailer";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -12,6 +13,7 @@ import {
 import type {
   LiveLabApiResponse,
   LiveLabCompleteResponse,
+  LiveLabNotification,
   LiveLabPrediction,
   LiveLabQueuedResponse,
   LiveLabResult,
@@ -144,6 +146,16 @@ type StartVideoJobRequest = {
   detectorId?: string;
   specialties?: string[];
   confidence?: number;
+  notifyEmail?: string | null;
+};
+
+type MailerConfig = {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string | null;
+  pass: string | null;
+  from: string;
 };
 
 function isServerlessHost() {
@@ -219,6 +231,218 @@ function sanitizeSourceName(value: string | null | undefined, fallback: string) 
 
 function sanitizeFilename(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function normalizeNotifyEmail(value: FormDataEntryValue | string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+    throw new Error("Enter a valid email address if you want a detection log emailed to you.");
+  }
+
+  return trimmed.slice(0, 320);
+}
+
+function resolveMailerConfig(config: ServerConfig): MailerConfig | null {
+  const host = config.envValues.SMTP_HOST?.trim();
+  const port = toNumber(config.envValues.SMTP_PORT) ?? 587;
+  const from = config.envValues.MAIL_FROM?.trim() || config.envValues.SMTP_FROM?.trim();
+
+  if (!host || !from || !Number.isFinite(port)) {
+    return null;
+  }
+
+  const secureValue = config.envValues.SMTP_SECURE?.trim().toLowerCase();
+  return {
+    host,
+    port,
+    secure: secureValue ? secureValue === "true" || secureValue === "1" : port === 465,
+    user: config.envValues.SMTP_USER?.trim() || null,
+    pass: config.envValues.SMTP_PASS?.trim() || null,
+    from,
+  };
+}
+
+function collectPredictionLog(result: LiveLabResult) {
+  const predictionMap = new Map<string, { count: number; maxConfidence: number; lastSeen: number | null }>();
+
+  if (result.overlay?.kind === "image") {
+    for (const prediction of result.overlay.predictions) {
+      const current = predictionMap.get(prediction.className) ?? {
+        count: 0,
+        maxConfidence: 0,
+        lastSeen: null,
+      };
+      current.count += 1;
+      current.maxConfidence = Math.max(current.maxConfidence, prediction.confidence);
+      predictionMap.set(prediction.className, current);
+    }
+  }
+
+  if (result.overlay?.kind === "video") {
+    for (const frame of result.overlay.frames) {
+      for (const prediction of frame.predictions) {
+        const current = predictionMap.get(prediction.className) ?? {
+          count: 0,
+          maxConfidence: 0,
+          lastSeen: null,
+        };
+        current.count += 1;
+        current.maxConfidence = Math.max(current.maxConfidence, prediction.confidence);
+        current.lastSeen = current.lastSeen === null ? frame.time : Math.max(current.lastSeen, frame.time);
+        predictionMap.set(prediction.className, current);
+      }
+    }
+  }
+
+  return [...predictionMap.entries()]
+    .map(([className, data]) => ({ className, ...data }))
+    .sort((left, right) => right.count - left.count || right.maxConfidence - left.maxConfidence)
+    .slice(0, 10);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function sendDetectionNotification(options: {
+  config: ServerConfig;
+  notifyEmail: string;
+  detectorLabel: string;
+  result: LiveLabResult;
+}): Promise<LiveLabNotification> {
+  const { config, notifyEmail, detectorLabel, result } = options;
+  const timestamp = new Date().toISOString();
+  const mailerConfig = resolveMailerConfig(config);
+
+  if (!mailerConfig) {
+    return {
+      status: "failed",
+      email: notifyEmail,
+      detail: "SMTP is not configured on the server.",
+      timestamp,
+    };
+  }
+
+  const classSummary = collectPredictionLog(result);
+  const textSummary =
+    classSummary.length > 0
+      ? classSummary
+          .map((item) =>
+            `${item.className}: peak ${item.maxConfidence.toFixed(2)} / sightings ${item.count}${
+              item.lastSeen === null ? "" : ` / last seen ${item.lastSeen.toFixed(2)}s`
+            }`,
+          )
+          .join("\n")
+      : "No detections were returned for this run.";
+
+  const htmlSummary =
+    classSummary.length > 0
+      ? `<ul>${classSummary
+          .map(
+            (item) =>
+              `<li><strong>${escapeHtml(item.className)}</strong> - peak ${item.maxConfidence.toFixed(
+                2,
+              )}, sightings ${item.count}${item.lastSeen === null ? "" : `, last seen ${item.lastSeen.toFixed(2)}s`}</li>`,
+          )
+          .join("")}</ul>`
+      : "<p>No detections were returned for this run.</p>";
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: mailerConfig.host,
+      port: mailerConfig.port,
+      secure: mailerConfig.secure,
+      auth: mailerConfig.user && mailerConfig.pass ? { user: mailerConfig.user, pass: mailerConfig.pass } : undefined,
+    });
+
+    await transporter.sendMail({
+      from: mailerConfig.from,
+      to: notifyEmail,
+      subject: `L.I.O.N. detection log: ${result.sourceName}`,
+      text: [
+        `L.I.O.N. detection log`,
+        ``,
+        `Timestamp: ${timestamp}`,
+        `Detector lane: ${detectorLabel}`,
+        `Model: ${result.model}`,
+        `Source: ${result.sourceName}`,
+        `Detections: ${result.detectionCount}`,
+        `Peak confidence: ${result.maxConfidence}`,
+        `Average confidence: ${result.avgConfidence}`,
+        `Runtime: ${result.runtime}`,
+        ``,
+        `Detection summary`,
+        textSummary,
+      ].join("\n"),
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #0b1820; line-height: 1.5;">
+          <h2 style="margin-bottom: 12px;">L.I.O.N. detection log</h2>
+          <p><strong>Timestamp:</strong> ${escapeHtml(timestamp)}<br/>
+          <strong>Detector lane:</strong> ${escapeHtml(detectorLabel)}<br/>
+          <strong>Model:</strong> ${escapeHtml(result.model)}<br/>
+          <strong>Source:</strong> ${escapeHtml(result.sourceName)}<br/>
+          <strong>Detections:</strong> ${escapeHtml(result.detectionCount)}<br/>
+          <strong>Peak confidence:</strong> ${escapeHtml(result.maxConfidence)}<br/>
+          <strong>Average confidence:</strong> ${escapeHtml(result.avgConfidence)}<br/>
+          <strong>Runtime:</strong> ${escapeHtml(result.runtime)}</p>
+          <h3 style="margin-top: 20px;">Detection summary</h3>
+          ${htmlSummary}
+        </div>
+      `,
+    });
+
+    return {
+      status: "sent",
+      email: notifyEmail,
+      detail: `Detection log sent to ${notifyEmail}.`,
+      timestamp,
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      email: notifyEmail,
+      detail: error instanceof Error ? error.message : "Unable to send detection email.",
+      timestamp,
+    };
+  }
+}
+
+async function attachNotificationIfRequested(options: {
+  payload: LiveLabApiResponse;
+  config: ServerConfig;
+  detectorLabel: string;
+  notifyEmail: string | null;
+}) {
+  const { payload, config, detectorLabel, notifyEmail } = options;
+
+  if (payload.status !== "complete" || !notifyEmail) {
+    return payload;
+  }
+
+  const notification = await sendDetectionNotification({
+    config,
+    notifyEmail,
+    detectorLabel,
+    result: payload.result,
+  });
+
+  return {
+    ...payload,
+    notification,
+  } satisfies LiveLabCompleteResponse;
 }
 
 function normalizePrediction(prediction: RoboflowPrediction): LiveLabPrediction {
@@ -894,6 +1118,14 @@ export async function GET(request: NextRequest) {
   const sourceName = sanitizeSourceName(request.nextUrl.searchParams.get("sourceName"), "uploaded-video.mp4");
   const detectorId = request.nextUrl.searchParams.get("detectorId") ?? DEFAULT_DETECTOR_ID;
   const detector = getDetectorOption(detectorId);
+  let notifyEmail: string | null;
+
+  try {
+    notifyEmail = normalizeNotifyEmail(request.nextUrl.searchParams.get("notifyEmail"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid email notification address.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 
   if (!jobId) {
     return NextResponse.json({ error: "A Roboflow video job id is required." }, { status: 400 });
@@ -911,7 +1143,14 @@ export async function GET(request: NextRequest) {
       confidence,
       sourceName,
     });
-    return NextResponse.json(payload);
+    return NextResponse.json(
+      await attachNotificationIfRequested({
+        payload,
+        config,
+        detectorLabel: detector.label,
+        notifyEmail,
+      }),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Live Lab video polling failed.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -927,6 +1166,14 @@ export async function POST(request: Request) {
     const detector = getDetectorOption(body.detectorId ?? DEFAULT_DETECTOR_ID);
     const confidence = clampConfidence(Number(body.confidence ?? DEFAULT_CONFIDENCE));
     const specialties = normalizeReefSpecialties(body.specialties);
+    let notifyEmail: string | null;
+
+    try {
+      notifyEmail = normalizeNotifyEmail(body.notifyEmail);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid email notification address.";
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
 
     if (body.intent !== "start-video-job") {
       return NextResponse.json({ error: "Unsupported Live Lab request intent." }, { status: 400 });
@@ -941,12 +1188,17 @@ export async function POST(request: Request) {
       try {
         const sourceName = sanitizeSourceName(body.sourceName, "uploaded-video.mp4");
         return NextResponse.json(
-          await runRemoteReefHealthSuiteFromUrl({
+          await attachNotificationIfRequested({
+            payload: await runRemoteReefHealthSuiteFromUrl({
+              config,
+              inputUrl,
+              sourceName,
+              confidence,
+              specialties,
+            }),
             config,
-            inputUrl,
-            sourceName,
-            confidence,
-            specialties,
+            detectorLabel: detector.label,
+            notifyEmail,
           }),
         );
       } catch (error) {
@@ -987,6 +1239,14 @@ export async function POST(request: Request) {
   const detectorId = String(formData.get("detectorId") ?? DEFAULT_DETECTOR_ID);
   const detector = getDetectorOption(detectorId);
   const specialties = normalizeReefSpecialties(formData.getAll("specialties").map(String));
+  let notifyEmail: string | null;
+
+  try {
+    notifyEmail = normalizeNotifyEmail(formData.get("notifyEmail"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid email notification address.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "Upload a file before running detection." }, { status: 400 });
@@ -1003,21 +1263,31 @@ export async function POST(request: Request) {
     try {
       if (resolveMarineDetectService(config)) {
         return NextResponse.json(
-          await runRemoteReefHealthSuiteUpload({
+          await attachNotificationIfRequested({
+            payload: await runRemoteReefHealthSuiteUpload({
+              config,
+              file,
+              confidence,
+              specialties,
+            }),
             config,
-            file,
-            confidence,
-            specialties,
+            detectorLabel: detector.label,
+            notifyEmail,
           }),
         );
       }
 
       return NextResponse.json(
-        await runLocalReefHealthSuite({
+        await attachNotificationIfRequested({
+          payload: await runLocalReefHealthSuite({
+            config,
+            file,
+            confidence,
+            specialties,
+          }),
           config,
-          file,
-          confidence,
-          specialties,
+          detectorLabel: detector.label,
+          notifyEmail,
         }),
       );
     } catch (error) {
@@ -1079,7 +1349,14 @@ export async function POST(request: Request) {
         }),
       };
 
-      return NextResponse.json(response);
+      return NextResponse.json(
+        await attachNotificationIfRequested({
+          payload: response,
+          config,
+          detectorLabel: detector.label,
+          notifyEmail,
+        }),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Live Lab image inference failed.";
       return NextResponse.json({ error: message }, { status: 500 });

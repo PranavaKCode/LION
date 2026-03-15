@@ -48,6 +48,13 @@ export type LiveLabResult = {
   overlay: LiveLabOverlay | null;
 };
 
+export type LiveLabNotification = {
+  status: "sent" | "failed";
+  email: string;
+  detail: string;
+  timestamp: string;
+};
+
 export type LiveLabQueuedResponse = {
   status: "queued" | "processing";
   jobId: string;
@@ -62,6 +69,7 @@ export type LiveLabCompleteResponse = {
   status: "complete";
   message?: string;
   result: LiveLabResult;
+  notification?: LiveLabNotification;
 };
 
 export type LiveLabApiResponse = LiveLabQueuedResponse | LiveLabCompleteResponse;
