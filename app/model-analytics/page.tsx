@@ -56,20 +56,7 @@ export default async function ModelAnalyticsPage() {
           This page centralizes the core training and validation plots used to tune the hosted invasive-species lane and
           reef-health detector strategy.
         </p>
-        <div className={styles.metaGrid}>
-          <div>
-            <span>Reference model</span>
-            <strong>{metrics.hostedModelShort}</strong>
-          </div>
-          <div>
-            <span>Reference frames</span>
-            <strong>{metrics.frameCount}</strong>
-          </div>
-          <div>
-            <span>Manifest source</span>
-            <strong>{metrics.manifestPath}</strong>
-          </div>
-        </div>
+        
         <Link className={styles.homeButton} href="/">
           Back To Dashboard
         </Link>
