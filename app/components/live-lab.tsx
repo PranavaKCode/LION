@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "../page.module.css";
 import type { LionMetrics } from "../lib/lion-data";
+import type { LiveLabResult } from "../lib/live-lab-types";
 
 type LiveLabProps = {
   defaultVideoSrc: string;
@@ -28,6 +30,10 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState(0.25);
+  const [result, setResult] = useState<LiveLabResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -44,6 +50,9 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
 
     setSelectedFile(null);
     setPreviewUrl(null);
+    setResult(null);
+    setErrorMessage(null);
+    setIsRunning(false);
 
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -58,28 +67,86 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     if (!file) {
       setSelectedFile(null);
       setPreviewUrl(null);
+      setResult(null);
+      setErrorMessage(null);
       return;
     }
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
+    setResult(null);
+    setErrorMessage(null);
   }
 
-  const previewSrc = previewUrl ?? defaultVideoSrc;
-  const previewKind: PreviewKind = selectedFile?.type.startsWith("image/") ? "image" : "video";
+  async function runDetection() {
+    if (!selectedFile) {
+      setErrorMessage("Choose an image or video before running detection.");
+      return;
+    }
+
+    setIsRunning(true);
+    setErrorMessage(null);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", selectedFile);
+      formData.set("confidence", confidence.toFixed(2));
+
+      const response = await fetch("/api/live-lab/detect", {
+        method: "POST",
+        body: formData,
+      });
+
+      const payload = (await response.json()) as LiveLabResult & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Detection failed.");
+      }
+
+      setResult(payload);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Detection failed.");
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
+  const localPreviewKind: PreviewKind = selectedFile?.type.startsWith("image/") ? "image" : "video";
+  const displayKind = result?.annotatedKind ?? localPreviewKind;
+  const displaySrc = result?.annotatedUrl ?? previewUrl ?? defaultVideoSrc;
   const selectedSource = selectedFile?.name ?? metrics.sourceName;
   const selectedType = selectedFile?.type || (selectedFile ? "N/A" : "video/mp4");
   const selectedSize = selectedFile ? formatBytes(selectedFile.size) : "N/A";
-  const previewLabel = selectedFile ? "local upload" : "demo preview";
+  const statusText = errorMessage
+    ? "error"
+    : isRunning
+      ? "running"
+      : result
+        ? "complete"
+        : "idle";
+  const statusClassName = errorMessage
+    ? styles.statusError
+    : isRunning
+      ? styles.statusRunning
+      : result
+        ? styles.statusSuccess
+        : styles.statusIdle;
+  const statusMessage = errorMessage
+    ? errorMessage
+    : isRunning
+      ? "Running hosted Roboflow inference..."
+      : result
+        ? `Detection complete via ${result.model}`
+        : "Choose a file and run detection.";
 
   return (
     <div className={styles.liveGrid}>
       <article className={`${styles.card} ${styles.uploadCard}`}>
         <p className={styles.cardTopline}>Upload dock</p>
-        <h3>Choose a reef clip or still image to preview locally.</h3>
+        <h3>Choose a reef clip or still image and run hosted detection.</h3>
         <p>
-          This now works as an actual local media picker. Inference is still not wired on the page, so analytics and
-          detections remain explicit placeholders until the backend is connected.
+          The live lab now sends the selected file through the L.I.O.N. detection route, which shells out to the real
+          Python pipeline and returns annotated output back into the UI.
         </p>
         <input
           ref={inputRef}
@@ -94,26 +161,55 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <label className={styles.dropzone} htmlFor={inputId}>
           <div className={styles.dropzoneIcon}>{selectedFile ? "OK" : "+"}</div>
           <div className={styles.dropzoneCopy}>
-            {selectedFile ? "Local preview ready" : "Click here to choose footage or stills"}
+            {selectedFile ? "Detection input ready" : "Click here to choose footage or stills"}
           </div>
           <div className={styles.dropzoneHint}>
-            {selectedFile ? "preview only / inference N/A" : "accepted / video/* image/*"}
+            {selectedFile ? "ready for hosted inference" : "accepted / video/* image/*"}
           </div>
         </label>
         <div className={styles.fileChipRow}>
           <span className={styles.fileChip}>{selectedSource}</span>
           <span className={styles.fileChip}>{selectedType}</span>
-          <span className={styles.fileChip}>{selectedSize}</span>
+          <span className={styles.fileChip}>{`size / ${selectedSize}`}</span>
+          <span className={styles.fileChip}>{`conf / ${confidence.toFixed(2)}`}</span>
         </div>
+        <div className={styles.controlStack}>
+          <div className={styles.controlHeader}>
+            <span>Confidence threshold</span>
+            <strong>{confidence.toFixed(2)}</strong>
+          </div>
+          <input
+            className={styles.rangeInput}
+            type="range"
+            min="0.05"
+            max="0.95"
+            step="0.05"
+            value={confidence}
+            onChange={(event) => {
+              setConfidence(Number(event.target.value));
+            }}
+          />
+        </div>
+        <div className={`${styles.statusBanner} ${statusClassName}`}>{statusMessage}</div>
         <div className={styles.actionRow}>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={runDetection}
+            disabled={!selectedFile || isRunning}
+          >
+            {isRunning ? "Running..." : "Run Detection"}
+          </button>
           {selectedFile ? (
-            <button type="button" className={styles.secondaryButton} onClick={clearSelection}>
+            <button type="button" className={styles.secondaryButton} onClick={clearSelection} disabled={isRunning}>
               Clear Selection
             </button>
           ) : null}
-          <a className={styles.primaryButton} href="#analytics">
-            Review Placeholder Metrics
-          </a>
+          {result?.jsonUrl ? (
+            <a className={styles.secondaryButton} href={result.jsonUrl} target="_blank" rel="noreferrer">
+              Open JSON
+            </a>
+          ) : null}
         </div>
       </article>
 
@@ -121,12 +217,19 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <p className={styles.cardTopline}>Annotated monitor</p>
         <div className={styles.monitorGrid}>
           <div className={styles.previewPanel}>
-            {previewKind === "image" ? (
-              <img className={styles.fullVideo} src={previewSrc} alt={selectedSource} />
+            {displayKind === "image" ? (
+              <Image
+                fill
+                unoptimized
+                className={styles.fullVideo}
+                src={displaySrc}
+                alt={selectedSource}
+                sizes="(max-width: 980px) 100vw, 70vw"
+              />
             ) : (
               <video
                 className={styles.fullVideo}
-                src={previewSrc}
+                src={displaySrc}
                 controls
                 autoPlay
                 muted
@@ -135,24 +238,32 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
                 preload="metadata"
               />
             )}
-            <span className={styles.previewTag}>{previewLabel}</span>
+            <span className={styles.previewTag}>{result ? "annotated output" : selectedFile ? "local upload" : "demo preview"}</span>
           </div>
           <div className={styles.previewStats}>
             <div className={styles.miniMetric}>
-              <span>Selected file</span>
-              <strong>{selectedSource}</strong>
+              <span>Status</span>
+              <strong>{statusText}</strong>
             </div>
             <div className={styles.miniMetric}>
-              <span>Media type</span>
-              <strong>{selectedType}</strong>
+              <span>Detections</span>
+              <strong>{result?.detectionCount ?? "N/A"}</strong>
             </div>
             <div className={styles.miniMetric}>
-              <span>File size</span>
-              <strong>{selectedSize}</strong>
+              <span>Max confidence</span>
+              <strong>{result?.maxConfidence ?? "N/A"}</strong>
             </div>
             <div className={styles.miniMetric}>
-              <span>Inference output</span>
-              <strong>N/A</strong>
+              <span>Model</span>
+              <strong>{result?.model ?? metrics.hostedModel}</strong>
+            </div>
+            <div className={styles.miniMetric}>
+              <span>Resolution</span>
+              <strong>{result?.resolution ?? metrics.resolution}</strong>
+            </div>
+            <div className={styles.miniMetric}>
+              <span>FPS</span>
+              <strong>{result?.fps ?? metrics.fps}</strong>
             </div>
           </div>
         </div>
@@ -164,31 +275,33 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
           <div className={styles.opsGrid}>
             <div className={styles.miniMetricCompact}>
               <span>Manifest</span>
-              <strong>{metrics.manifestPath}</strong>
+              <strong>{result?.manifestUrl ?? metrics.manifestPath}</strong>
             </div>
             <div className={styles.miniMetricCompact}>
-              <span>Output video</span>
-              <strong>{metrics.outputVideoName}</strong>
+              <span>Output</span>
+              <strong>{result?.annotatedUrl ?? metrics.outputVideoName}</strong>
             </div>
             <div className={styles.miniMetricCompact}>
               <span>Frame json</span>
-              <strong>{metrics.frameJsonStatus}</strong>
+              <strong>{result?.jsonUrl ?? metrics.frameJsonStatus}</strong>
             </div>
             <div className={styles.miniMetricCompact}>
-              <span>Preset</span>
-              <strong>{metrics.presetName}</strong>
+              <span>Runtime</span>
+              <strong>{result?.runtime ?? metrics.runtime}</strong>
             </div>
           </div>
         </article>
         <article className={`${styles.card} ${styles.opsCard}`}>
           <p className={styles.cardTopline}>Current page state</p>
           <ul className={styles.noteList}>
-            <li>Upload and local preview work from the browser without any fake inference output.</li>
-            <li>Metrics stay real if repo exports exist, otherwise they fall back to explicit N/A placeholders.</li>
-            <li>Evaluation charts remain placeholders until model scoring data is connected.</li>
+            <li>Uploads now call the real `lionfish_yolo.py` detection flow through a server route.</li>
+            <li>The UI shows annotated outputs and real summary stats whenever the Python + Roboflow environment is configured.</li>
+            <li>Missing `ROBOFLOW_API_KEY` or Python setup errors are surfaced directly in the live lab instead of being hidden.</li>
           </ul>
         </article>
       </div>
     </div>
   );
 }
+
+
