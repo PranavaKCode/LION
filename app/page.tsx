@@ -448,7 +448,7 @@ export default async function Home() {
             ))}
           </div>
 
-          <div className={styles.coverageGrid}>
+          {/* <div className={styles.coverageGrid}>
             {detectableSpeciesFamilies.map((family) => (
               <article key={family.title} className={`${styles.card} ${styles.coverageCard}`}>
                 <div className={styles.coverageHeader}>
@@ -466,9 +466,9 @@ export default async function Home() {
           </div>
 
           <p className={styles.coverageOutro}>
-            The visual wall above stays scoped to the real supplied prediction assets, while the full detection stack
-            covers the reef-health classes listed here and more as the suite expands.
-          </p>
+            The visual wall stays scoped to the real supplied prediction assets above, while the detection stack covers
+            the full species families listed here and much more as the reef-health suite expands.
+          </p> */}
         </section>
 
         <section className={styles.sectionBlock} id="species-map">
