@@ -9,13 +9,13 @@ import { getLionMetrics } from "./lib/lion-data";
 const architectureSteps = [
   {
     step: "01",
-    title: "Footage ingest",
-    description: "Drop in stills or MP4 field footage from surveys, ROV passes, or monitoring stations.",
+    title: "Image / video intake",
+    description: "On A Boat, streaming live from a reef, or in the lab with pre-recorded footage. Drop it in. ",
   },
   {
     step: "02",
-    title: "Detector routing",
-    description: "Choose Lionfish Watch, Crown of Thorns Watch, or the broader Reef Health Suite before inference begins.",
+    title: "Hosted Roboflow detector",
+    description: "A call is made to our hosted AI model, so each invasive species is detected.",
   },
   {
     step: "03",
@@ -259,7 +259,9 @@ export default async function Home() {
                   <h3>{item.title}</h3>
                   <p>{item.description}</p>
                 </article>
-                {index < architectureSteps.length - 1 ? <div className={styles.pipelineArrow}>-&gt;</div> : null}
+                {index < architectureSteps.length - 1 ? (
+                  <div className={styles.pipelineArrow}>{">" }</div>
+                ) : null}
               </div>
             ))}
           </div>
