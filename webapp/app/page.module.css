@@ -62,7 +62,7 @@
     radial-gradient(circle at 78% 62%, rgba(255, 122, 79, 0.15), transparent 18%),
     linear-gradient(180deg, rgba(255, 248, 236, 0.98) 0%, rgba(214, 255, 248, 0.96) 44%, rgba(245, 239, 221, 0.98) 100%);
   box-shadow: 18px 18px 0 rgba(6, 18, 24, 0.82);
-  padding: 2rem;
+  padding: 4.75rem 2rem 2rem;
 }
 
 .pageFrame::before,
