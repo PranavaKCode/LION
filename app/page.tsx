@@ -31,24 +31,61 @@ const architectureSteps = [
   },
 ] as const;
 
-const galleryMoments = [0.6, 1.8, 2.9, 4.1, 5.5, 7.0] as const;
-
-function formatPreviewTime(totalSeconds: number) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds - minutes * 60;
-  return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
-}
+const galleryCards = [
+  {
+    title: "Crown-of-thorns Starfish",
+    subtitle: "Acanthaster cf. solaris",
+    imageSrc: "/media/crown_of_thorns.jpg",
+    imageNote: "Field photo",
+    summary: "Corallivorous starfish that can rapidly reduce live coral cover during outbreaks.",
+    tags: ["High Risk", "Coral mortality hotspot", "CO2 sequestration loss: High"],
+  },
+  {
+    title: "Sharks",
+    subtitle: "Apex predator group",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Top-down predators that stabilize reef food webs and suppress trophic imbalance.",
+    tags: ["Ecosystem keystone", "Biodiversity stabilizer", "CO2 impact if depleted: Moderate-High"],
+  },
+  {
+    title: "Sea Turtles",
+    subtitle: "Cheloniidae / Dermochelyidae",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Graze seagrass and algae, supporting nursery habitats tied to blue-carbon storage.",
+    tags: ["Protected species", "Habitat maintainer", "Blue-carbon support: High"],
+  },
+  {
+    title: "Giant Clam",
+    subtitle: "Tridacninae",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Filter-feeding bivalve that improves water clarity and contributes to reef calcification.",
+    tags: ["Water-quality indicator", "Reef builder", "Carbon storage relevance: Moderate"],
+  },
+  {
+    title: "Urchin",
+    subtitle: "Echinoidea",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Controls algal overgrowth, but population extremes can trigger reef phase shifts.",
+    tags: ["Balance-sensitive", "Algae controller", "CO2 buffering linkage: Moderate"],
+  },
+  {
+    title: "Sea Cucumber",
+    subtitle: "Holothuroidea",
+    imageSrc: "/media/Live_demo.gif",
+    imageNote: "Reference image pending",
+    summary: "Bioturbates sediments and recycles nutrients that support healthy reef chemistry.",
+    tags: ["Sediment health", "Nutrient recycler", "Carbon cycling support: Moderate"],
+  },
+] as const;
 
 export default async function Home() {
   const metrics = await getLionMetrics();
   const videoSrc = "/media/lionfish-demo.mp4";
   const liveDemoGifSrc = "/media/Live_demo.gif";
-  const galleryCards = galleryMoments.map((time, index) => ({
-    title: `Preview frame ${index + 1}`,
-    label: formatPreviewTime(time),
-    time,
-    tags: ["demo clip", "preview frame"],
-  }));
 
   return (
     <main className={styles.pageShell} id="top">
@@ -203,21 +240,25 @@ export default async function Home() {
         <section className={`${styles.sectionBlock} ${styles.gallerySection}`} id="gallery">
           <div className={styles.sectionHeading}>
             <p className={styles.eyebrow}>Detection gallery</p>
-            <h2>A dense footage wall for lots of object-detection examples.</h2>
+            <h2>Species intelligence wall for reef risk monitoring.</h2>
             <p>
-              The gallery is framed as real preview stills from the demo clip rather than invented sample data. It stays
-              visually rich without pretending the page already has live detection metadata attached.
+              Each card highlights an organism class we track and why it matters ecologically, including qualitative
+              risk and carbon-cycle impact context for reef operations.
             </p>
           </div>
 
           <div className={styles.galleryGrid}>
             {galleryCards.map((card) => (
               <article key={card.title} className={`${styles.card} ${styles.galleryCard}`}>
-                <GalleryFrame label={card.title} seconds={card.time} videoSrc={videoSrc} width={640} height={360} />
+                <div className={styles.galleryMediaPanel}>
+                  <img className={styles.galleryImage} src={card.imageSrc} alt={`${card.title} detection reference`} />
+                  <span className={styles.previewTag}>{card.imageNote}</span>
+                </div>
                 <div className={styles.galleryMeta}>
                   <div>
                     <h3>{card.title}</h3>
-                    <p>{`Captured at ${card.label} from ${metrics.sourceName}`}</p>
+                    <p>{card.subtitle}</p>
+                    <p>{card.summary}</p>
                   </div>
                   <div className={styles.galleryTags}>
                     {card.tags.map((tag) => (
