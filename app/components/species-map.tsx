@@ -10,6 +10,8 @@ type SpeciesMapProps = {
 
 type SpeciesPoint = {
   species: string;
+  site: string;
+  region: string;
   latitude: number;
   longitude: number;
 };
@@ -24,19 +26,21 @@ function parseSpeciesCsv(csvText: string) {
     .filter(Boolean)
     .map((line) => {
       const parts = line.split(",");
-      if (parts.length < 3) {
+      if (parts.length < 5) {
         return null;
       }
 
       const longitude = Number(parts.at(-1));
       const latitude = Number(parts.at(-2));
-      const species = parts.slice(0, -2).join(",").trim();
+      const region = parts.at(-3)?.trim() ?? "";
+      const site = parts.at(-4)?.trim() ?? "";
+      const species = parts.slice(0, -4).join(",").trim();
 
-      if (!species || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      if (!species || !site || !region || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
         return null;
       }
 
-      return { species, latitude, longitude } satisfies SpeciesPoint;
+      return { species, site, region, latitude, longitude } satisfies SpeciesPoint;
     })
     .filter((point): point is SpeciesPoint => point !== null);
 }
@@ -55,7 +59,7 @@ function FitSpeciesBounds({ points }: { points: SpeciesPoint[] }) {
     }
 
     const bounds = points.map((point) => [point.latitude, point.longitude] as [number, number]);
-    map.fitBounds(bounds, { padding: [24, 24], maxZoom: 4 });
+    map.fitBounds(bounds, { padding: [24, 24], maxZoom: 5 });
   }, [map, points]);
 
   return null;
@@ -76,7 +80,7 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
 
         const response = await fetch(encodeURI(csvPath), { cache: "force-cache" });
         if (!response.ok) {
-          throw new Error("Unable to load invasive species CSV.");
+          throw new Error("Unable to load reef observation CSV.");
         }
 
         const csvText = await response.text();
@@ -103,8 +107,11 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
   }, [csvPath]);
 
   const speciesCounts: Record<string, number> = {};
+  const regions = new Set<string>();
+
   for (const point of points) {
     speciesCounts[point.species] = (speciesCounts[point.species] ?? 0) + 1;
+    regions.add(point.region);
   }
 
   const speciesOrder = Object.keys(speciesCounts).sort((left, right) => speciesCounts[right] - speciesCounts[left]);
@@ -131,10 +138,10 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
 
             return (
               <CircleMarker
-                key={`${point.species}-${point.latitude}-${point.longitude}-${index}`}
+                key={`${point.species}-${point.site}-${point.latitude}-${point.longitude}-${index}`}
                 center={[point.latitude, point.longitude]}
                 radius={7}
-                pathOptions={{ color, fillColor: color, fillOpacity: 0.8, weight: 2 }}
+                pathOptions={{ color, fillColor: color, fillOpacity: 0.82, weight: 2 }}
               >
                 <Tooltip direction="top" offset={[0, -8]}>{point.species}</Tooltip>
                 <Popup>
@@ -153,11 +160,15 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
           <strong className={styles.statValue}>{points.length}</strong>
         </div>
         <div className={styles.statCard}>
-          <span className={styles.statLabel}>Species tracked</span>
+          <span className={styles.statLabel}>Classes shown</span>
           <strong className={styles.statValue}>{speciesOrder.length}</strong>
         </div>
+        <div className={styles.statCard}>
+          <span className={styles.statLabel}>Reef zones</span>
+          <strong className={styles.statValue}>{regions.size}</strong>
+        </div>
         <div className={styles.legendCard}>
-          <p className={styles.legendTitle}>Species labels</p>
+          <p className={styles.legendTitle}>Observed classes</p>
           <div className={styles.legendList}>
             {speciesOrder.map((species) => (
               <div className={styles.legendItem} key={species}>
@@ -168,7 +179,7 @@ export function SpeciesMap({ csvPath }: SpeciesMapProps) {
                 />
                 <div>
                   <strong>{species}</strong>
-                  <span>{`${speciesCounts[species]} mapped detections`}</span>
+                  <span>{`${speciesCounts[species]} mapped observations`}</span>
                 </div>
               </div>
             ))}

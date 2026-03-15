@@ -486,14 +486,32 @@ async function fetchJson<T>(url: string, init: RequestInit, errorLabel: string):
   return (await response.json()) as T;
 }
 
+function normalizeAbsoluteServiceUrl(rawValue: string) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const withProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    return new URL(withProtocol).toString().replace(/\/$/, "");
+  } catch {
+    throw new Error(
+      `MARINE_DETECT_API_URL must be a valid absolute URL. Received "${rawValue}". Expected something like https://johndasmith-marine-detect-api.hf.space.`,
+    );
+  }
+}
+
 function resolveMarineDetectService(config: ServerConfig) {
-  const serviceUrl = config.envValues.MARINE_DETECT_API_URL?.trim() || DEFAULT_MARINE_DETECT_API_URL;
+  const configuredServiceUrl = config.envValues.MARINE_DETECT_API_URL?.trim();
+  const serviceUrl = configuredServiceUrl || DEFAULT_MARINE_DETECT_API_URL;
   if (!serviceUrl) {
     return null;
   }
 
   return {
-    url: serviceUrl.replace(/\/$/, ""),
+    url: normalizeAbsoluteServiceUrl(serviceUrl),
     token: config.envValues.MARINE_DETECT_API_TOKEN?.trim() || null,
   };
 }
