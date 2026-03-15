@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev",`r`n    "dev:reef-service": ".\\.venv311\\Scripts\\python.exe -m uvicorn services.marine_detect_api.main:app --host 127.0.0.1 --port 8000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -25,3 +25,4 @@
     "typescript": "^5"
   }
 }
+
