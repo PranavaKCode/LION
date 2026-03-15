@@ -51,6 +51,15 @@ type ServerConfig = {
   pythonCommand: string;
 };
 
+function isServerlessHost() {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.AWS_EXECUTION_ENV ||
+      process.env.LAMBDA_TASK_ROOT,
+  );
+}
+
 function sanitizeFilename(name: string) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -262,6 +271,16 @@ function runLionfishProcess(command: string, args: string[], config: ServerConfi
 export async function POST(request: Request) {
   const serverConfig = await resolveServerConfig();
 
+  if (isServerlessHost()) {
+    return NextResponse.json(
+      {
+        error:
+          "The deployed Live Lab is preview-only right now. This serverless host cannot run the local Python detection pipeline or persist annotated outputs. Run L.I.O.N. locally to process real uploads.",
+      },
+      { status: 501 },
+    );
+  }
+
   if (!serverConfig.apiKey) {
     return NextResponse.json(
       {
@@ -360,3 +379,4 @@ export async function POST(request: Request) {
     await rm(tempRoot, { recursive: true, force: true });
   }
 }
+

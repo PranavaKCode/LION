@@ -9,7 +9,7 @@ Next.js homepage and live lab for the L.I.O.N. lionfish detection project.
 - A server route at `app/api/live-lab/detect/route.ts`
 - The real Python detection CLI in `lionfish_yolo.py`
 
-The Live Lab route shells out to the Python detector, runs hosted Roboflow inference, and returns annotated image or video output back into the web UI.
+The Live Lab route shells out to the Python detector during local development, runs hosted Roboflow inference, and returns annotated image or video output back into the web UI. The deployed serverless site keeps the upload UI in preview-only mode until inference is moved to a deployment-friendly backend.
 
 ## Requirements for Live Lab
 
@@ -91,3 +91,6 @@ python lionfish_yolo.py hosted-predict --preset lionfish --source <file> --outpu
 - Live Lab outputs are written under `public/live-lab-output/`
 - That folder is ignored in git
 - Analytics cards on the homepage still intentionally show `N/A` until evaluation exports are wired in
+- The deployed serverless app does not run the local Python detector yet; use local dev for real Live Lab inference
+
+

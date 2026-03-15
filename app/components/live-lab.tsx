@@ -145,8 +145,8 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <p className={styles.cardTopline}>Upload dock</p>
         <h3>Choose a reef clip or still image and run hosted detection.</h3>
         <p>
-          The live lab now sends the selected file through the L.I.O.N. detection route, which shells out to the real
-          Python pipeline and returns annotated output back into the UI.
+          Local L.I.O.N. runs use the real Python detection pipeline. The deployed site keeps the upload experience and
+          preview UI, but it stays in preview-only mode until inference is moved to a deployment-friendly backend.
         </p>
         <input
           ref={inputRef}
@@ -294,8 +294,8 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
         <article className={`${styles.card} ${styles.opsCard}`}>
           <p className={styles.cardTopline}>Current page state</p>
           <ul className={styles.noteList}>
-            <li>Uploads now call the real `lionfish_yolo.py` detection flow through a server route.</li>
-            <li>The UI shows annotated outputs and real summary stats whenever the Python + Roboflow environment is configured.</li>
+            <li>Local runs call the real `lionfish_yolo.py` detection flow through the server route.</li>
+            <li>The deployed site is preview-only for Live Lab today; full inference currently works from a local L.I.O.N. setup.</li>
             <li>Missing `ROBOFLOW_API_KEY` or Python setup errors are surfaced directly in the live lab instead of being hidden.</li>
           </ul>
         </article>
@@ -303,5 +303,7 @@ export function LiveLab({ defaultVideoSrc, metrics }: LiveLabProps) {
     </div>
   );
 }
+
+
 
 
