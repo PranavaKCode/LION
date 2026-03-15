@@ -62,7 +62,7 @@
     radial-gradient(circle at 78% 62%, rgba(255, 122, 79, 0.15), transparent 18%),
     linear-gradient(180deg, rgba(255, 248, 236, 0.98) 0%, rgba(214, 255, 248, 0.96) 44%, rgba(245, 239, 221, 0.98) 100%);
   box-shadow: 18px 18px 0 rgba(6, 18, 24, 0.82);
-  padding: 2rem;
+  padding: 4.75rem 2rem 2rem;
 }
 
 .pageFrame::before,
@@ -376,6 +376,9 @@
 }
 
 .fullVideo {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -389,6 +392,7 @@
 
 .heroOverlayCards {
   position: absolute;
+  z-index: 2;
   right: 1rem;
   bottom: 1rem;
   display: grid;
@@ -593,6 +597,7 @@
 
 .previewTag {
   position: absolute;
+  z-index: 2;
   left: 1rem;
   bottom: 1rem;
   padding: 0.625rem 0.875rem;
